@@ -349,8 +349,8 @@ function updateContainerRect() {
 }
 
 function applyZoom() {
-  const w = containerRect.value.width / (zoomLevel.value / 100);
-  const h = containerRect.value.height / (zoomLevel.value / 100);
+  const w = containerRect.value.width / ((zoomLevel.value ?? 100) / 100);
+  const h = containerRect.value.height / ((zoomLevel.value ?? 100) / 100);
   viewBox.value = { ...viewBox.value, w, h };
 }
 
@@ -360,15 +360,14 @@ function zoomAtPoint(clientX: number, clientY: number, newIndex: number) {
   const mx = (clientX - rect.left) / rect.width;   // 0..1
   const my = (clientY - rect.top) / rect.height;   // 0..1
 
-  const oldW = containerRect.value.width / (zoomLevel.value / 100);
-  const oldH = containerRect.value.height / (zoomLevel.value / 100);
-  const oldScale = zoomLevel.value / 100;
+  const oldW = containerRect.value.width / ((zoomLevel.value ?? 100) / 100);
+  const oldH = containerRect.value.height / ((zoomLevel.value ?? 100) / 100);
 
   const svgX = viewBox.value.x + mx * oldW;
   const svgY = viewBox.value.y + my * oldH;
 
   zoomIndex.value = newIndex;
-  const newScale = zoomLevel.value / 100;
+  const newScale = (zoomLevel.value ?? 100) / 100;
   const newW = containerRect.value.width / newScale;
   const newH = containerRect.value.height / newScale;
 
@@ -552,7 +551,7 @@ function selectPrevSibling() {
   if (!parent) return;
   const idx = parent.children.findIndex((c) => c.id === selectedNodeId.value);
   if (idx > 0) {
-    selectedNodeId.value = parent.children[idx - 1].id;
+    selectedNodeId.value = parent.children[idx - 1]!.id;
   }
 }
 
@@ -562,7 +561,7 @@ function selectNextSibling() {
   if (!parent) return;
   const idx = parent.children.findIndex((c) => c.id === selectedNodeId.value);
   if (idx < parent.children.length - 1) {
-    selectedNodeId.value = parent.children[idx + 1].id;
+    selectedNodeId.value = parent.children[idx + 1]!.id;
   }
 }
 
