@@ -11,4 +11,4 @@ export default {
   'node.cut': 'Cut',
   'node.paste': 'Paste',
   'node.defaultText': 'New Node',
-}
+};

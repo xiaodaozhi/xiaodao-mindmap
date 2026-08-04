@@ -11,4 +11,4 @@ export default {
   'node.cut': '剪切',
   'node.paste': '粘贴',
   'node.defaultText': '新节点',
-}
+};

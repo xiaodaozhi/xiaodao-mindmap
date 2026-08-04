@@ -1,8 +1,8 @@
 <template>
   <div
-    :class="['mindmap-wrapper', `mindmap-theme-${theme}`]"
-    :style="{ 'background': `var(--mm-bg)` }"
     ref="wrapperRef"
+    :class="['mindmap-wrapper', `mindmap-theme-${theme}`]"
+    :style="wrapperStyle"
   >
     <div class="canvas-toolbar">
       <button
@@ -54,7 +54,17 @@
           stroke-width="2"
           stroke-linecap="round"
           stroke-linejoin="round"
-        ><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+        ><line
+          x1="12"
+          y1="5"
+          x2="12"
+          y2="19"
+        /><line
+          x1="5"
+          y1="12"
+          x2="19"
+          y2="12"
+        /></svg>
       </button>
       <button
         class="canvas-tb-btn"
@@ -76,15 +86,15 @@
     </div>
 
     <div
+      ref="containerRef"
       class="canvas-container"
       @mousedown="onCanvasMouseDown"
-      ref="containerRef"
     >
       <svg
+        ref="svgRef"
         :width="svgSize.width"
         :height="svgSize.height"
         :viewBox="`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`"
-        ref="svgRef"
       >
         <!-- Connections -->
         <g v-if="layout.connections.length > 0">
@@ -129,15 +139,15 @@
             :height="ln.height"
           >
             <input
-              xmlns="http://www.w3.org/1999/xhtml"
               ref="editInputRef"
-              :class="['mm-edit-input', nodeClass(ln)]"
               v-model="editText"
+              xmlns="http://www.w3.org/1999/xhtml"
+              :class="['mm-edit-input', nodeClass(ln)]"
               @blur="finishEdit"
               @keydown.enter="finishEdit"
               @keydown.escape="cancelEdit"
               @mousedown.stop
-            />
+            >
           </foreignObject>
 
           <text
@@ -209,281 +219,301 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick, type Ref } from 'vue'
-import type { MindMapNode, LayoutNode } from './types'
-import { useI18n } from './composables/useI18n'
-import { useUndoRedo } from './composables/useUndoRedo'
-import { useClipboard } from './composables/useClipboard'
-import { useKeyboard } from './composables/useKeyboard'
-import { useLayout } from './composables/useLayout'
-import { deepClone, generateId } from './composables/utils'
+import { ref, computed, watch, onMounted, nextTick, type Ref } from 'vue';
+import type { MindMapNode, LayoutNode } from './types';
+import { useI18n } from './composables/useI18n';
+import { useUndoRedo } from './composables/useUndoRedo';
+import { useClipboard } from './composables/useClipboard';
+import { useKeyboard } from './composables/useKeyboard';
+import { useLayout } from './composables/useLayout';
+import { deepClone, generateId } from './composables/utils';
 
 const props = withDefaults(defineProps<{
-  modelValue: MindMapNode
-  theme?: 'light' | 'dark'
-  locale?: string
+  modelValue: MindMapNode;
+  theme?: 'light' | 'dark';
+  locale?: string;
+  width?: string | number;
+  height?: string | number;
 }>(), {
   theme: 'light',
   locale: 'zh-CN',
-})
+});
 
 const emit = defineEmits<{
-  'update:modelValue': [value: MindMapNode]
-}>()
+  'update:modelValue': [value: MindMapNode];
+}>();
+
+// --- Wrapper style ---
+const wrapperStyle = computed(() => {
+  const style: Record<string, string> = {
+    background: 'var(--mm-bg)',
+  };
+  if (props.width !== undefined) {
+    style.width = typeof props.width === 'number' ? `${props.width}px` : props.width;
+  }
+  if (props.height !== undefined) {
+    style.height = typeof props.height === 'number' ? `${props.height}px` : props.height;
+  }
+  return style;
+});
 
 // --- i18n ---
-const localeRef = computed(() => props.locale || 'zh-CN')
-const { t } = useI18n(localeRef)
+const localeRef = computed(() => props.locale || 'zh-CN');
+const { t } = useI18n(localeRef);
 
 // --- Internal reactive data ---
-const innerRoot = ref<MindMapNode>(deepClone(props.modelValue))
+const innerRoot = ref<MindMapNode>(deepClone(props.modelValue));
 
 watch(() => props.modelValue, (val) => {
-  innerRoot.value = deepClone(val)
-}, { deep: true })
+  innerRoot.value = deepClone(val);
+}, { deep: true });
 
 function emitUpdate() {
-  emit('update:modelValue', deepClone(innerRoot.value))
+  emit('update:modelValue', deepClone(innerRoot.value));
 }
 
 // --- Layout ---
-const layout = useLayout(innerRoot as Ref<MindMapNode>)
+const layout = useLayout(innerRoot as Ref<MindMapNode>);
 
 // --- Undo/Redo ---
 const { canUndo, canRedo, pushState, undo, redo } = useUndoRedo(
   () => innerRoot.value,
   (node) => {
-    innerRoot.value = node
-    emitUpdate()
-  }
-)
+    innerRoot.value = node;
+    emitUpdate();
+  },
+);
 
-function handleUndo() { undo() }
-function handleRedo() { redo() }
+function handleUndo() {
+  undo();
+}
+function handleRedo() {
+  redo();
+}
 
 // --- Clipboard ---
-const { hasClipboard, copyNode, cutNode, pasteNode } = useClipboard()
+const { hasClipboard, copyNode, cutNode, pasteNode } = useClipboard();
 
 // --- State ---
-const selectedNodeId = ref<string | null>(null)
-const editingNodeId = ref<string | null>(null)
-const editText = ref('')
-const editInputRef = ref<HTMLInputElement[]>()
+const selectedNodeId = ref<string | null>(null);
+const editingNodeId = ref<string | null>(null);
+const editText = ref('');
+const editInputRef = ref<HTMLInputElement[]>();
 
-const wrapperRef = ref<HTMLElement>()
-const containerRef = ref<HTMLElement>()
-const svgRef = ref<SVGSVGElement>()
+const wrapperRef = ref<HTMLElement>();
+const containerRef = ref<HTMLElement>();
+const svgRef = ref<SVGSVGElement>();
 
 // --- ViewBox / Panning ---
-const viewBox = ref({ x: 0, y: -200, w: 800, h: 600 })
-const isPanning = ref(false)
-const panStart = ref({ x: 0, y: 0 })
-const panViewStart = ref({ x: 0, y: 0 })
+const viewBox = ref({ x: 0, y: -200, w: 800, h: 600 });
+const isPanning = ref(false);
+const panStart = ref({ x: 0, y: 0 });
+const panViewStart = ref({ x: 0, y: 0 });
 
 const svgSize = computed(() => ({
   width: '100%',
   height: '100%',
-}))
+}));
 
 // --- Helper: find node by id ---
 function findNodeById(root: MindMapNode, id: string): MindMapNode | null {
-  if (root.id === id) return root
+  if (root.id === id) return root;
   for (const c of root.children) {
-    const found = findNodeById(c, id)
-    if (found) return found
+    const found = findNodeById(c, id);
+    if (found) return found;
   }
-  return null
+  return null;
 }
 
 // --- Helper: find parent of node ---
 function findParentById(root: MindMapNode, id: string): MindMapNode | null {
   for (const c of root.children) {
-    if (c.id === id) return root
-    const found = findParentById(c, id)
-    if (found) return found
+    if (c.id === id) return root;
+    const found = findParentById(c, id);
+    if (found) return found;
   }
-  return null
+  return null;
 }
 
 // --- Helper: remove node from parent ---
 function removeNodeById(root: MindMapNode, id: string): boolean {
-  const idx = root.children.findIndex((c) => c.id === id)
+  const idx = root.children.findIndex((c) => c.id === id);
   if (idx !== -1) {
-    root.children.splice(idx, 1)
-    return true
+    root.children.splice(idx, 1);
+    return true;
   }
   for (const c of root.children) {
-    if (removeNodeById(c, id)) return true
+    if (removeNodeById(c, id)) return true;
   }
-  return false
+  return false;
 }
 
 // --- Add child ---
 function addChild() {
-  const targetId = selectedNodeId.value ?? innerRoot.value.id
-  const parent = findNodeById(innerRoot.value, targetId)
-  if (!parent) return
-  pushState()
+  const targetId = selectedNodeId.value ?? innerRoot.value.id;
+  const parent = findNodeById(innerRoot.value, targetId);
+  if (!parent) return;
+  pushState();
   const newNode: MindMapNode = {
     id: generateId(),
     text: t('node.defaultText'),
     children: [],
-  }
-  parent.children.push(newNode)
-  selectedNodeId.value = newNode.id
-  emitUpdate()
-  nextTick(() => startEditById(newNode.id))
+  };
+  parent.children.push(newNode);
+  selectedNodeId.value = newNode.id;
+  emitUpdate();
+  nextTick(() => startEditById(newNode.id));
 }
 
 // --- Add sibling ---
 function addSibling() {
-  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return
-  const parent = findParentById(innerRoot.value, selectedNodeId.value)
-  if (!parent) return
-  pushState()
-  const idx = parent.children.findIndex((c) => c.id === selectedNodeId.value)
+  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return;
+  const parent = findParentById(innerRoot.value, selectedNodeId.value);
+  if (!parent) return;
+  pushState();
+  const idx = parent.children.findIndex((c) => c.id === selectedNodeId.value);
   const newNode: MindMapNode = {
     id: generateId(),
     text: t('node.defaultText'),
     children: [],
-  }
-  parent.children.splice(idx + 1, 0, newNode)
-  selectedNodeId.value = newNode.id
-  emitUpdate()
-  nextTick(() => startEditById(newNode.id))
+  };
+  parent.children.splice(idx + 1, 0, newNode);
+  selectedNodeId.value = newNode.id;
+  emitUpdate();
+  nextTick(() => startEditById(newNode.id));
 }
 
 // --- Delete ---
 function deleteNode() {
-  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return
-  pushState()
-  removeNodeById(innerRoot.value, selectedNodeId.value)
-  selectedNodeId.value = null
-  editingNodeId.value = null
-  emitUpdate()
+  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return;
+  pushState();
+  removeNodeById(innerRoot.value, selectedNodeId.value);
+  selectedNodeId.value = null;
+  editingNodeId.value = null;
+  emitUpdate();
 }
 
 // --- Edit ---
 function startEdit(ln: LayoutNode) {
-  editingNodeId.value = ln.id
-  const node = findNodeById(innerRoot.value, ln.id)
-  editText.value = node?.text === t('node.defaultText') ? '' : (node?.text ?? '')
+  editingNodeId.value = ln.id;
+  const node = findNodeById(innerRoot.value, ln.id);
+  editText.value = node?.text === t('node.defaultText') ? '' : (node?.text ?? '');
   nextTick(() => {
-    const inputs = document.querySelectorAll('.mm-edit-input')
-    const last = inputs[inputs.length - 1] as HTMLInputElement
+    const inputs = document.querySelectorAll('.mm-edit-input');
+    const last = inputs[inputs.length - 1] as HTMLInputElement;
     if (last) {
-      last.focus()
-      last.select()
+      last.focus();
+      last.select();
     }
-  })
+  });
 }
 
 function startEditById(id: string) {
-  const node = findNodeById(innerRoot.value, id)
-  if (!node) return
-  editingNodeId.value = id
-  editText.value = node.text === t('node.defaultText') ? '' : node.text
+  const node = findNodeById(innerRoot.value, id);
+  if (!node) return;
+  editingNodeId.value = id;
+  editText.value = node.text === t('node.defaultText') ? '' : node.text;
   nextTick(() => {
-    const inputs = document.querySelectorAll('.mm-edit-input')
-    const last = inputs[inputs.length - 1] as HTMLInputElement
+    const inputs = document.querySelectorAll('.mm-edit-input');
+    const last = inputs[inputs.length - 1] as HTMLInputElement;
     if (last) {
-      last.focus()
-      last.select()
+      last.focus();
+      last.select();
     }
-  })
+  });
 }
 
 function finishEdit() {
-  if (!editingNodeId.value) return
-  const node = findNodeById(innerRoot.value, editingNodeId.value)
+  if (!editingNodeId.value) return;
+  const node = findNodeById(innerRoot.value, editingNodeId.value);
   if (node) {
-    pushState()
-    node.text = editText.value.trim() || t('node.defaultText')
-    emitUpdate()
+    pushState();
+    node.text = editText.value.trim() || t('node.defaultText');
+    emitUpdate();
   }
-  editingNodeId.value = null
+  editingNodeId.value = null;
 }
 
 function cancelEdit() {
-  editingNodeId.value = null
+  editingNodeId.value = null;
 }
 
 // --- Cut/Copy/Paste ---
 function handleCut() {
-  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return
-  const node = findNodeById(innerRoot.value, selectedNodeId.value)
-  if (!node) return
-  cutNode(node)
-  pushState()
-  removeNodeById(innerRoot.value, selectedNodeId.value)
-  selectedNodeId.value = null
-  emitUpdate()
+  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return;
+  const node = findNodeById(innerRoot.value, selectedNodeId.value);
+  if (!node) return;
+  cutNode(node);
+  pushState();
+  removeNodeById(innerRoot.value, selectedNodeId.value);
+  selectedNodeId.value = null;
+  emitUpdate();
 }
 
 function handleCopy() {
-  if (!selectedNodeId.value) return
-  const node = findNodeById(innerRoot.value, selectedNodeId.value)
-  if (!node) return
-  copyNode(node)
+  if (!selectedNodeId.value) return;
+  const node = findNodeById(innerRoot.value, selectedNodeId.value);
+  if (!node) return;
+  copyNode(node);
 }
 
 function handlePaste(): boolean {
-  if (!hasClipboard.value) return false
-  const node = pasteNode()
-  if (!node) return false
-  const targetId = selectedNodeId.value ?? innerRoot.value.id
-  const parent = findNodeById(innerRoot.value, targetId)
-  if (!parent) return false
-  pushState()
+  if (!hasClipboard.value) return false;
+  const node = pasteNode();
+  if (!node) return false;
+  const targetId = selectedNodeId.value ?? innerRoot.value.id;
+  const parent = findNodeById(innerRoot.value, targetId);
+  if (!parent) return false;
+  pushState();
   // Regenerate IDs to avoid conflicts
-  regenerateIds(node)
-  parent.children.push(node)
-  selectedNodeId.value = node.id
-  emitUpdate()
-  return true
+  regenerateIds(node);
+  parent.children.push(node);
+  selectedNodeId.value = node.id;
+  emitUpdate();
+  return true;
 }
 
 function regenerateIds(node: MindMapNode) {
-  node.id = generateId()
+  node.id = generateId();
   for (const c of node.children) {
-    regenerateIds(c)
+    regenerateIds(c);
   }
 }
 
 // --- Navigation (arrow key sibling selection) ---
 function selectPrevSibling() {
-  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return
-  const parent = findParentById(innerRoot.value, selectedNodeId.value)
-  if (!parent) return
-  const idx = parent.children.findIndex((c) => c.id === selectedNodeId.value)
+  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return;
+  const parent = findParentById(innerRoot.value, selectedNodeId.value);
+  if (!parent) return;
+  const idx = parent.children.findIndex((c) => c.id === selectedNodeId.value);
   if (idx > 0) {
-    selectedNodeId.value = parent.children[idx - 1].id
+    selectedNodeId.value = parent.children[idx - 1].id;
   }
 }
 
 function selectNextSibling() {
-  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return
-  const parent = findParentById(innerRoot.value, selectedNodeId.value)
-  if (!parent) return
-  const idx = parent.children.findIndex((c) => c.id === selectedNodeId.value)
+  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return;
+  const parent = findParentById(innerRoot.value, selectedNodeId.value);
+  if (!parent) return;
+  const idx = parent.children.findIndex((c) => c.id === selectedNodeId.value);
   if (idx < parent.children.length - 1) {
-    selectedNodeId.value = parent.children[idx + 1].id
+    selectedNodeId.value = parent.children[idx + 1].id;
   }
 }
 
 function selectParentNode() {
-  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return
-  const parent = findParentById(innerRoot.value, selectedNodeId.value)
+  if (!selectedNodeId.value || selectedNodeId.value === innerRoot.value.id) return;
+  const parent = findParentById(innerRoot.value, selectedNodeId.value);
   if (parent) {
-    selectedNodeId.value = parent.id
+    selectedNodeId.value = parent.id;
   }
 }
 
 function selectFirstChild() {
-  if (!selectedNodeId.value) return
-  const node = findNodeById(innerRoot.value, selectedNodeId.value)
+  if (!selectedNodeId.value) return;
+  const node = findNodeById(innerRoot.value, selectedNodeId.value);
   if (node && node.children.length > 0) {
-    selectedNodeId.value = node.children[0].id
+    selectedNodeId.value = node.children[0].id;
   }
 }
 
@@ -499,121 +529,121 @@ useKeyboard({
   onDelete: deleteNode,
   onEscape: () => {
     if (editingNodeId.value) {
-      cancelEdit()
+      cancelEdit();
     } else {
-      selectedNodeId.value = null
+      selectedNodeId.value = null;
     }
   },
   onArrowUp: selectPrevSibling,
   onArrowDown: selectNextSibling,
   onArrowLeft: selectParentNode,
   onArrowRight: selectFirstChild,
-})
+});
 
 // --- Collapse/Expand ---
 function hasRealChildren(id: string): boolean {
-  const node = findNodeById(innerRoot.value, id)
-  return node ? node.children.length > 0 : false
+  const node = findNodeById(innerRoot.value, id);
+  return node ? node.children.length > 0 : false;
 }
 
 function toggleCollapse(ln: LayoutNode) {
-  const node = findNodeById(innerRoot.value, ln.id)
-  if (!node) return
-  pushState()
-  node.collapsed = !node.collapsed
-  emitUpdate()
+  const node = findNodeById(innerRoot.value, ln.id);
+  if (!node) return;
+  pushState();
+  node.collapsed = !node.collapsed;
+  emitUpdate();
 }
 
 // --- Node styling by depth (0=root, 1=level2, 2+=normal) ---
 function nodeClass(ln: LayoutNode): string {
-  if (ln.depth === 0) return 'mm-node--root'
-  if (ln.depth === 1) return 'mm-node--level2'
-  return 'mm-node--normal'
+  if (ln.depth === 0) return 'mm-node--root';
+  if (ln.depth === 1) return 'mm-node--level2';
+  return 'mm-node--normal';
 }
 
 function nodeFill(ln: LayoutNode): string {
-  if (ln.depth === 0) return 'var(--mm-node-root-bg)'
-  if (ln.depth === 1) return 'var(--mm-node-level2-bg)'
-  return 'var(--mm-node-bg)'
+  if (ln.depth === 0) return 'var(--mm-node-root-bg)';
+  if (ln.depth === 1) return 'var(--mm-node-level2-bg)';
+  return 'var(--mm-node-bg)';
 }
 
 function nodeBorder(ln: LayoutNode): string {
-  if (ln.depth === 0) return 'var(--mm-node-root-border)'
-  if (ln.depth === 1) return 'var(--mm-node-level2-border)'
-  return 'var(--mm-node-border)'
+  if (ln.depth === 0) return 'var(--mm-node-root-border)';
+  if (ln.depth === 1) return 'var(--mm-node-level2-border)';
+  return 'var(--mm-node-border)';
 }
 
 function nodeTextFill(ln: LayoutNode): string {
-  if (ln.depth === 0) return 'var(--mm-node-root-text)'
-  if (ln.depth === 1) return 'var(--mm-node-level2-text)'
-  return 'var(--mm-node-text)'
+  if (ln.depth === 0) return 'var(--mm-node-root-text)';
+  if (ln.depth === 1) return 'var(--mm-node-level2-text)';
+  return 'var(--mm-node-text)';
 }
 
 function nodeFontSize(ln: LayoutNode): number {
-  if (ln.depth === 0) return 16
-  if (ln.depth === 1) return 14
-  return 13
+  if (ln.depth === 0) return 16;
+  if (ln.depth === 1) return 14;
+  return 13;
 }
 
 function nodeFontWeight(ln: LayoutNode): string {
-  if (ln.depth === 0) return 'bold'
-  if (ln.depth === 1) return '600'
-  return 'normal'
+  if (ln.depth === 0) return 'bold';
+  if (ln.depth === 1) return '600';
+  return 'normal';
 }
 
 function nodeRadius(_ln: LayoutNode): number {
-  return 4
+  return 4;
 }
 
 // --- Bezier path ---
 function getBezierPath(
   from: { x: number; y: number },
-  to: { x: number; y: number }
+  to: { x: number; y: number },
 ): string {
-  const dx = to.x - from.x
-  const cp1x = from.x + dx * 0.4
-  const cp1y = from.y
-  const cp2x = to.x - dx * 0.4
-  const cp2y = to.y
-  return `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`
+  const dx = to.x - from.x;
+  const cp1x = from.x + dx * 0.4;
+  const cp1y = from.y;
+  const cp2x = to.x - dx * 0.4;
+  const cp2y = to.y;
+  return `M ${from.x} ${from.y} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${to.x} ${to.y}`;
 }
 
 // --- Mouse events ---
 function onNodeMouseDown(e: MouseEvent, ln: LayoutNode) {
-  if (e.button !== 0) return
-  selectedNodeId.value = ln.id
+  if (e.button !== 0) return;
+  selectedNodeId.value = ln.id;
 }
 
 function onCanvasMouseDown(e: MouseEvent) {
   if (e.button === 0) {
     // Start panning
-    isPanning.value = true
-    panStart.value = { x: e.clientX, y: e.clientY }
-    panViewStart.value = { x: viewBox.value.x, y: viewBox.value.y }
+    isPanning.value = true;
+    panStart.value = { x: e.clientX, y: e.clientY };
+    panViewStart.value = { x: viewBox.value.x, y: viewBox.value.y };
   }
 }
 
 function onMouseMove(e: MouseEvent) {
-  if (!isPanning.value) return
-  const dx = e.clientX - panStart.value.x
-  const dy = e.clientY - panStart.value.y
-  viewBox.value.x = panViewStart.value.x - dx
-  viewBox.value.y = panViewStart.value.y - dy
+  if (!isPanning.value) return;
+  const dx = e.clientX - panStart.value.x;
+  const dy = e.clientY - panStart.value.y;
+  viewBox.value.x = panViewStart.value.x - dx;
+  viewBox.value.y = panViewStart.value.y - dy;
 }
 
 function onMouseUp() {
-  isPanning.value = false
+  isPanning.value = false;
 }
 
 // --- Click on empty canvas to deselect ---
-watch(selectedNodeId, () => { /* tracked */ })
+watch(selectedNodeId, () => { /* tracked */ });
 
 onMounted(() => {
-  window.addEventListener('mousemove', onMouseMove)
-  window.addEventListener('mouseup', onMouseUp)
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
   // Center view on root
-  viewBox.value = { x: -60, y: -300, w: 1000, h: 700 }
-})
+  viewBox.value = { x: -60, y: -300, w: 1000, h: 700 };
+});
 </script>
 
 <style scoped>
