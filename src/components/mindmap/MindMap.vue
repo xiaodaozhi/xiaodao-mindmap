@@ -577,7 +577,7 @@ function selectFirstChild() {
   if (!selectedNodeId.value) return;
   const node = findNodeById(innerRoot.value, selectedNodeId.value);
   if (node && node.children.length > 0) {
-    selectedNodeId.value = node.children[0].id;
+    selectedNodeId.value = node.children[0]!.id;
   }
 }
 
@@ -689,7 +689,7 @@ function onCanvasMouseDown(e: MouseEvent) {
 
 function onMouseMove(e: MouseEvent) {
   if (!isPanning.value) return;
-  const scale = zoomLevel.value / 100;
+  const scale = (zoomLevel.value ?? 100) / 100;
   const dx = (e.clientX - panStart.value.x) / scale;
   const dy = (e.clientY - panStart.value.y) / scale;
   viewBox.value.x = panViewStart.value.x - dx;
@@ -726,7 +726,7 @@ function initView() {
   // Position: root node centered vertically, shifted left 25% if has children
   const rootNode = layout.value.nodes.find((n) => n.depth === 0);
   if (!rootNode) return;
-  const scale = zoomLevel.value / 100;
+  const scale = (zoomLevel.value ?? 100) / 100;
   const rx = rootNode.x + rootNode.width / 2;
   const ry = rootNode.y + rootNode.height / 2;
   const hasChildren = rootNode.children.length > 0;
