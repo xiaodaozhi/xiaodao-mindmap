@@ -738,14 +738,29 @@ function initView() {
 onMounted(() => {
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup', onMouseUp);
-  window.addEventListener('resize', updateContainerRect);
+
+  let initialized = false;
+  const resizeObserver = new ResizeObserver(() => {
+    updateContainerRect();
+    applyZoom();
+    if (!initialized && containerRect.value.width > 0 && containerRect.value.height > 0 && layout.value.nodes.length > 0) {
+      initialized = true;
+      initView();
+    }
+  });
+  if (containerRef.value) {
+    resizeObserver.observe(containerRef.value);
+  }
+
+  // Also watch layout changes for initial data load
   watch(layout, (val) => {
     updateContainerRect();
     applyZoom();
-    if (val.nodes.length > 0) {
+    if (!initialized && containerRect.value.width > 0 && containerRect.value.height > 0 && val.nodes.length > 0) {
+      initialized = true;
       initView();
     }
-  }, { immediate: true, deep: true });
+  }, { deep: true });
 });
 </script>
 
