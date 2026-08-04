@@ -1,0 +1,14 @@
+export default {
+  'toolbar.undo': '撤销',
+  'toolbar.redo': '重做',
+  'toolbar.addChild': '添加子节点',
+  'toolbar.delete': '删除节点',
+  'node.addChild': '添加子节点',
+  'node.addSibling': '添加兄弟节点',
+  'node.delete': '删除节点',
+  'node.edit': '编辑节点',
+  'node.copy': '复制',
+  'node.cut': '剪切',
+  'node.paste': '粘贴',
+  'node.defaultText': '新节点',
+}
