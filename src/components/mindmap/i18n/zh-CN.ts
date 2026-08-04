@@ -3,6 +3,7 @@ export default {
   'toolbar.redo': '重做',
   'toolbar.addChild': '添加子节点',
   'toolbar.delete': '删除节点',
+  'toolbar.resetView': '重置视图',
   'node.addChild': '添加子节点',
   'node.addSibling': '添加兄弟节点',
   'node.delete': '删除节点',

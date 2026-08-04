@@ -68,6 +68,26 @@
       </button>
       <button
         class="canvas-tb-btn"
+        :title="t('toolbar.resetView')"
+        @click="resetView"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ><circle
+          cx="12"
+          cy="12"
+          r="10"
+        /><polyline points="12 6 12 12 16 10" /></svg>
+      </button>
+      <button
+        class="canvas-tb-btn"
         :disabled="!selectedNodeId || selectedNodeId === innerRoot.id"
         :title="t('toolbar.delete')"
         @click="deleteNode"
@@ -89,6 +109,7 @@
       ref="containerRef"
       class="canvas-container"
       @mousedown="onCanvasMouseDown"
+      @wheel.prevent="onCanvasWheel"
     >
       <svg
         ref="svgRef"
@@ -304,16 +325,60 @@ const wrapperRef = ref<HTMLElement>();
 const containerRef = ref<HTMLElement>();
 const svgRef = ref<SVGSVGElement>();
 
-// --- ViewBox / Panning ---
-const viewBox = ref({ x: 0, y: -200, w: 800, h: 600 });
+// --- ViewBox / Panning / Zoom ---
+const zoomLevels = [10, 17, 25, 33, 50, 75, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 1000];
+const zoomIndex = ref(6); // index of 100%
+const zoomLevel = computed(() => zoomLevels[zoomIndex.value]);
+
+const viewBox = ref({ x: 0, y: 0, w: 1000, h: 700 });
 const isPanning = ref(false);
 const panStart = ref({ x: 0, y: 0 });
 const panViewStart = ref({ x: 0, y: 0 });
+const containerRect = ref({ width: 1000, height: 700 });
 
 const svgSize = computed(() => ({
   width: '100%',
   height: '100%',
 }));
+
+function updateContainerRect() {
+  if (containerRef.value) {
+    const rect = containerRef.value.getBoundingClientRect();
+    containerRect.value = { width: rect.width, height: rect.height };
+  }
+}
+
+function applyZoom() {
+  const w = containerRect.value.width / (zoomLevel.value / 100);
+  const h = containerRect.value.height / (zoomLevel.value / 100);
+  viewBox.value = { ...viewBox.value, w, h };
+}
+
+function zoomAtPoint(clientX: number, clientY: number, newIndex: number) {
+  if (!containerRef.value) return;
+  const rect = containerRef.value.getBoundingClientRect();
+  const mx = (clientX - rect.left) / rect.width;   // 0..1
+  const my = (clientY - rect.top) / rect.height;   // 0..1
+
+  const oldW = containerRect.value.width / (zoomLevel.value / 100);
+  const oldH = containerRect.value.height / (zoomLevel.value / 100);
+  const oldScale = zoomLevel.value / 100;
+
+  const svgX = viewBox.value.x + mx * oldW;
+  const svgY = viewBox.value.y + my * oldH;
+
+  zoomIndex.value = newIndex;
+  const newScale = zoomLevel.value / 100;
+  const newW = containerRect.value.width / newScale;
+  const newH = containerRect.value.height / newScale;
+
+  viewBox.value = {
+    x: svgX - mx * newW,
+    y: svgY - my * newH,
+    w: newW,
+    h: newH,
+  };
+}
 
 // --- Helper: find node by id ---
 function findNodeById(root: MindMapNode, id: string): MindMapNode | null {
@@ -625,8 +690,9 @@ function onCanvasMouseDown(e: MouseEvent) {
 
 function onMouseMove(e: MouseEvent) {
   if (!isPanning.value) return;
-  const dx = e.clientX - panStart.value.x;
-  const dy = e.clientY - panStart.value.y;
+  const scale = zoomLevel.value / 100;
+  const dx = (e.clientX - panStart.value.x) / scale;
+  const dy = (e.clientY - panStart.value.y) / scale;
   viewBox.value.x = panViewStart.value.x - dx;
   viewBox.value.y = panViewStart.value.y - dy;
 }
@@ -635,14 +701,52 @@ function onMouseUp() {
   isPanning.value = false;
 }
 
+function onCanvasWheel(e: WheelEvent) {
+  let newIndex = zoomIndex.value;
+  if (e.deltaY < 0) {
+    if (zoomIndex.value < zoomLevels.length - 1) newIndex = zoomIndex.value + 1;
+  } else {
+    if (zoomIndex.value > 0) newIndex = zoomIndex.value - 1;
+  }
+  if (newIndex === zoomIndex.value) return;
+  zoomAtPoint(e.clientX, e.clientY, newIndex);
+}
+
 // --- Click on empty canvas to deselect ---
 watch(selectedNodeId, () => { /* tracked */ });
+
+function resetView() {
+  zoomIndex.value = 6; // 100%
+  initView();
+}
+
+function initView() {
+  updateContainerRect();
+  applyZoom();
+
+  // Position: root node centered vertically, shifted left 25% if has children
+  const rootNode = layout.value.nodes.find((n) => n.depth === 0);
+  if (!rootNode) return;
+  const scale = zoomLevel.value / 100;
+  const rx = rootNode.x + rootNode.width / 2;
+  const ry = rootNode.y + rootNode.height / 2;
+  const hasChildren = rootNode.children.length > 0;
+  const centerX = hasChildren ? 0.25 : 0.5;
+  viewBox.value.x = rx - containerRect.value.width * centerX / scale;
+  viewBox.value.y = ry - containerRect.value.height * 0.5 / scale;
+}
 
 onMounted(() => {
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup', onMouseUp);
-  // Center view on root
-  viewBox.value = { x: -60, y: -300, w: 1000, h: 700 };
+  window.addEventListener('resize', updateContainerRect);
+  watch(layout, (val) => {
+    updateContainerRect();
+    applyZoom();
+    if (val.nodes.length > 0) {
+      initView();
+    }
+  }, { immediate: true, deep: true });
 });
 </script>
 

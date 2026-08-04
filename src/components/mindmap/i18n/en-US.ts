@@ -3,6 +3,7 @@ export default {
   'toolbar.redo': 'Redo',
   'toolbar.addChild': 'Add Child',
   'toolbar.delete': 'Delete Node',
+  'toolbar.resetView': 'Reset View',
   'node.addChild': 'Add Child',
   'node.addSibling': 'Add Sibling',
   'node.delete': 'Delete Node',

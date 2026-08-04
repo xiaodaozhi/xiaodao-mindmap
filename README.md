@@ -2,6 +2,8 @@
 
 A feature-rich, interactive mind map component built with **Vue 3**, **TypeScript**, and **Vite**. Edit, expand, and navigate hierarchical mind map structures directly on an SVG canvas with full keyboard shortcut support, undo/redo, cut/copy/paste, collapse/expand, and internationalization.
 
+![Preview](img/preview.png)
+
 ## Features
 
 - **Canvas-based editing** — click, double-click, pan, and edit nodes directly on an SVG canvas
