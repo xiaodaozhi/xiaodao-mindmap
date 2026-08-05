@@ -4,6 +4,8 @@ export default {
   'toolbar.addChild': '添加子节点',
   'toolbar.delete': '删除节点',
   'toolbar.resetView': '重置视图',
+  'toolbar.zoomIn': '放大',
+  'toolbar.zoomOut': '缩小',
   'node.addChild': '添加子节点',
   'node.addSibling': '添加兄弟节点',
   'node.delete': '删除节点',

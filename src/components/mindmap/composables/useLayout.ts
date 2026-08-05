@@ -48,19 +48,19 @@ function measureSubtree(node: MindMapNode, depth: number = 0): MeasuredNode {
       const prevChild = measuredChildren[i - 1];
       let minY = currentY;
       for (let d = depth + 1; ; d++) {
-        const prevContour = prevChild.contour.get(d);
-        const currContour = child.contour.get(d);
+        const prevContour = prevChild!.contour.get(d);
+        const currContour = child!.contour.get(d);
         if (!prevContour && !currContour) break;
         if (prevContour && currContour) {
           // child.y + currContour.min >= prevChild.y + prevContour.max + V_GAP
-          const contourY = prevChild.node.y + prevContour.max - currContour.min + V_GAP;
+          const contourY = prevChild!.node.y + prevContour.max - currContour.min + V_GAP;
           if (contourY > minY) minY = contourY;
         }
       }
       currentY = minY;
     }
-    child.node.y = currentY;
-    currentY += child.totalHeight;
+    child!.node.y = currentY;
+    currentY += child!.totalHeight;
   }
 
   // Center children vertically around this node

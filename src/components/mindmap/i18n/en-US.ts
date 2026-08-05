@@ -4,6 +4,8 @@ export default {
   'toolbar.addChild': 'Add Child',
   'toolbar.delete': 'Delete Node',
   'toolbar.resetView': 'Reset View',
+  'toolbar.zoomIn': 'Zoom In',
+  'toolbar.zoomOut': 'Zoom Out',
   'node.addChild': 'Add Child',
   'node.addSibling': 'Add Sibling',
   'node.delete': 'Delete Node',

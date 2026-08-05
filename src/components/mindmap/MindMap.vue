@@ -41,6 +41,73 @@
       </button>
       <button
         class="canvas-tb-btn"
+        :disabled="zoomIndex >= zoomLevels.length - 1"
+        :title="t('toolbar.zoomIn')"
+        @click="zoomInCenter"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ><circle
+          cx="11"
+          cy="11"
+          r="8"
+        /><line
+          x1="21"
+          y1="21"
+          x2="16.65"
+          y2="16.65"
+        /><line
+          x1="11"
+          y1="8"
+          x2="11"
+          y2="14"
+        /><line
+          x1="8"
+          y1="11"
+          x2="14"
+          y2="11"
+        /></svg>
+      </button>
+      <button
+        class="canvas-tb-btn"
+        :disabled="zoomIndex <= 0"
+        :title="t('toolbar.zoomOut')"
+        @click="zoomOutCenter"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ><circle
+          cx="11"
+          cy="11"
+          r="8"
+        /><line
+          x1="21"
+          y1="21"
+          x2="16.65"
+          y2="16.65"
+        /><line
+          x1="8"
+          y1="11"
+          x2="14"
+          y2="11"
+        /></svg>
+      </button>
+      <button
+        class="canvas-tb-btn"
         :disabled="!selectedNodeId"
         :title="t('toolbar.addChild')"
         @click="addChild"
@@ -106,6 +173,9 @@
       class="canvas-container"
       @mousedown="onCanvasMouseDown"
       @wheel.prevent="onCanvasWheel"
+      @touchstart.prevent="onCanvasTouchStart"
+      @touchmove.prevent="onCanvasTouchMove"
+      @touchend="onCanvasTouchEnd"
     >
       <svg
         ref="svgRef"
@@ -322,7 +392,7 @@ const containerRef = ref<HTMLElement>();
 const svgRef = ref<SVGSVGElement>();
 
 // --- ViewBox / Panning / Zoom ---
-const zoomLevels = [10, 17, 25, 33, 50, 75, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 1000];
+const zoomLevels = [10, 25, 33, 50, 75, 100, 150, 200, 300, 500, 700, 1000];
 const zoomIndex = ref(6); // index of 100%
 const zoomLevel = computed(() => zoomLevels[zoomIndex.value]);
 
@@ -696,6 +766,64 @@ function onMouseUp() {
   isPanning.value = false;
 }
 
+// --- Touch events (mobile pan / pinch-zoom) ---
+const touchStartDist = ref(0);
+const touchStartZoomIndex = ref(0);
+
+function getTouchDist(t1: Touch, t2: Touch): number {
+  const dx = t1.clientX - t2.clientX;
+  const dy = t1.clientY - t2.clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function getTouchCenter(t1: Touch, t2: Touch): { x: number; y: number } {
+  return {
+    x: (t1.clientX + t2.clientX) / 2,
+    y: (t1.clientY + t2.clientY) / 2,
+  };
+}
+
+function onCanvasTouchStart(e: TouchEvent) {
+  const list = Array.from(e.touches);
+  if (list.length === 1) {
+    // Single finger — start panning
+    isPanning.value = true;
+    panStart.value = { x: list[0]!.clientX, y: list[0]!.clientY };
+    panViewStart.value = { x: viewBox.value.x, y: viewBox.value.y };
+  } else if (list.length === 2) {
+    // Two fingers — start pinch zoom
+    isPanning.value = false;
+    touchStartDist.value = getTouchDist(list[0]!, list[1]!);
+    touchStartZoomIndex.value = zoomIndex.value;
+  }
+}
+
+function onCanvasTouchMove(e: TouchEvent) {
+  const list = Array.from(e.touches);
+  if (list.length === 1 && isPanning.value) {
+    const scale = (zoomLevel.value ?? 100) / 100;
+    const dx = (list[0]!.clientX - panStart.value.x) / scale;
+    const dy = (list[0]!.clientY - panStart.value.y) / scale;
+    viewBox.value.x = panViewStart.value.x - dx;
+    viewBox.value.y = panViewStart.value.y - dy;
+  } else if (list.length === 2) {
+    const dist = getTouchDist(list[0]!, list[1]!);
+    const ratio = dist / touchStartDist.value;
+    // Find nearest zoom level by ratio
+    const targetLevel = Math.round(touchStartZoomIndex.value * ratio);
+    const clamped = Math.max(0, Math.min(zoomLevels.length - 1, targetLevel));
+    if (clamped !== zoomIndex.value) {
+      const center = getTouchCenter(list[0]!, list[1]!);
+      zoomAtPoint(center.x, center.y, clamped);
+    }
+  }
+}
+
+function onCanvasTouchEnd(_e: TouchEvent) {
+  isPanning.value = false;
+  touchStartDist.value = 0;
+}
+
 function onCanvasWheel(e: WheelEvent) {
   let newIndex = zoomIndex.value;
   if (e.deltaY < 0) {
@@ -713,6 +841,20 @@ watch(selectedNodeId, () => { /* tracked */ });
 function resetView() {
   zoomIndex.value = 6; // 100%
   initView();
+}
+
+function zoomInCenter() {
+  if (zoomIndex.value >= zoomLevels.length - 1) return;
+  if (!containerRef.value) return;
+  const rect = containerRef.value.getBoundingClientRect();
+  zoomAtPoint(rect.left + rect.width / 2, rect.top + rect.height / 2, zoomIndex.value + 1);
+}
+
+function zoomOutCenter() {
+  if (zoomIndex.value <= 0) return;
+  if (!containerRef.value) return;
+  const rect = containerRef.value.getBoundingClientRect();
+  zoomAtPoint(rect.left + rect.width / 2, rect.top + rect.height / 2, zoomIndex.value - 1);
 }
 
 function initView() {
@@ -814,6 +956,7 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   cursor: grab;
+  touch-action: none;
 }
 
 .canvas-container:active {
