@@ -51,7 +51,7 @@ function measureSubtree(node: MindMapNode, depth: number = 0): MeasuredNode {
   // Arrange children vertically by their actual subtree bounds.
   // A single direct child should sit exactly to the right of its parent, even
   // when that child owns a taller subtree.
-  let totalChildrenHeight = NODE_HEIGHT;
+  let totalChildrenHeight;
   if (measuredChildren.length === 1) {
     measuredChildren[0]!.node.y = 0;
     measuredChildren[0]!.node.x = STEP_X;

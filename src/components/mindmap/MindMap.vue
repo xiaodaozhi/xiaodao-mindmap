@@ -302,7 +302,10 @@
         </g>
 
         <!-- Drop indicator (dashed placeholder child + connection) -->
-        <g v-if="isDragging && dropTargetId && dropInsertY !== -1" class="mm-drop-indicator">
+        <g
+          v-if="isDragging && dropTargetId && dropInsertY !== -1"
+          class="mm-drop-indicator"
+        >
           <path
             :d="getBezierPath({ x: dropTargetEdgeX, y: dropTargetCenterY }, { x: dropTargetEdgeX + 80, y: dropInsertY + 18 })"
             fill="none"
@@ -325,7 +328,10 @@
         </g>
 
         <!-- Drag ghost: follows the cursor -->
-        <g v-if="isDragging && draggedNodeText" class="mm-drag-ghost">
+        <g
+          v-if="isDragging && draggedNodeText"
+          class="mm-drag-ghost"
+        >
           <rect
             :x="dragMouseSvgPos.x - 60"
             :y="dragMouseSvgPos.y - 18"
@@ -562,7 +568,7 @@ function isInChildrenArea(clientX: number, clientY: number, ln: LayoutNode): boo
 
   // Compute bounding box of children
   const childLayouts = layout.value.nodes.filter((n) =>
-    node.children.some((c) => c.id === n.id)
+    node.children.some((c) => c.id === n.id),
   );
   if (childLayouts.length === 0) return false;
 
@@ -974,10 +980,10 @@ function onMouseMove(e: MouseEvent) {
       for (const ln of layoutNodes) {
         if (ln.id === dragNodeId.value) continue;
         if (
-            hitTestNode(e.clientX, e.clientY, ln)
-            || isRightOfNode(e.clientX, e.clientY, ln)
-            || isInChildrenArea(e.clientX, e.clientY, ln)
-          ) {
+          hitTestNode(e.clientX, e.clientY, ln)
+          || isRightOfNode(e.clientX, e.clientY, ln)
+          || isInChildrenArea(e.clientX, e.clientY, ln)
+        ) {
           target = ln;
           break;
         }
@@ -1007,7 +1013,7 @@ function onMouseMove(e: MouseEvent) {
       const targetNode = findNodeById(innerRoot.value, target.id);
       const targetChildren = targetNode ? targetNode.children : [];
       const targetChildrenLayouts = layoutNodes.filter(
-        (ln) => targetChildren.some((c) => c.id === ln.id) && ln.id !== dragNodeId.value
+        (ln) => targetChildren.some((c) => c.id === ln.id) && ln.id !== dragNodeId.value,
       );
 
       // Default: append at end of children or right below target
@@ -1061,7 +1067,7 @@ function onMouseUp() {
           const curY = dragMouseSvgPos.value.y;
           let insertIdx = target.children.length;
           const childLayouts = layout.value.nodes.filter(
-            (ln) => target.children.some((c) => c.id === ln.id)
+            (ln) => target.children.some((c) => c.id === ln.id),
           );
           for (let i = 0; i < childLayouts.length; i++) {
             const child = childLayouts[i]!;
