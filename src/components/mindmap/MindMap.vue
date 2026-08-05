@@ -301,8 +301,8 @@
           </g>
         </g>
 
-        <!-- Drop indicator for cross-parent move (dashed placeholder child + connection) -->
-        <g v-if="isDragging && dropTargetId && dropInsertY !== -1 && !isSameParentReorder" class="mm-drop-indicator">
+        <!-- Drop indicator (dashed placeholder child + connection) -->
+        <g v-if="isDragging && dropTargetId && dropInsertY !== -1" class="mm-drop-indicator">
           <path
             :d="getBezierPath({ x: dropTargetEdgeX, y: dropTargetCenterY }, { x: dropTargetEdgeX + 80, y: dropInsertY + 18 })"
             fill="none"
@@ -323,18 +323,6 @@
             stroke-dasharray="6, 3"
           />
         </g>
-
-        <!-- Same-parent reorder line -->
-        <line
-          v-if="isDragging && dragNodeId && isSameParentReorder && dropInsertY !== -1"
-          :x1="(reorderLineXStart)"
-          :x2="(reorderLineXStart + 140)"
-          :y1="dropInsertY"
-          :y2="dropInsertY"
-          stroke="#16a34a"
-          stroke-width="3"
-          stroke-linecap="round"
-        />
 
         <!-- Drag ghost: follows the cursor -->
         <g v-if="isDragging && draggedNodeText" class="mm-drag-ghost">
@@ -457,15 +445,17 @@ const svgRef = ref<SVGSVGElement>();
 // --- Drag & Drop ---
 const isDragging = ref(false);
 const dragNodeId = ref<string | null>(null);
+const dragNodeBackup = ref<MindMapNode | null>(null);
+const dragNodeParentId = ref<string | null>(null);
+const dragNodeIndex = ref(-1);
 const dropTargetId = ref<string | null>(null);
 const dragStartPos = ref({ x: 0, y: 0 });
 const dragMouseSvgPos = ref({ x: 0, y: 0 });
-const dropInsertY = ref(-1);               // Y position for drop indicator
-const isSameParentReorder = ref(false);     // true = reorder within same parent
-const draggedNodeText = ref('');            // text for ghost display
-const dropTargetEdgeX = ref(0);             // right edge X of drop target
-const dropTargetCenterY = ref(0);           // center Y of drop target
-const reorderLineXStart = ref(0);           // X start of reorder line
+const dropInsertY = ref(-1);
+const isSameParentReorder = ref(false);
+const draggedNodeText = ref('');
+const dropTargetEdgeX = ref(0);
+const dropTargetCenterY = ref(0);
 
 // --- ViewBox / Panning / Zoom ---
 const zoomLevels = [10, 25, 33, 50, 75, 100, 150, 200, 300, 500, 700, 1000];
@@ -555,7 +545,51 @@ function isRightOfNode(clientX: number, clientY: number, ln: LayoutNode): boolea
   const scale = (zoomLevel.value ?? 100) / 100;
   const svgX = viewBox.value.x + (clientX - rect.left) / scale;
   const svgY = viewBox.value.y + (clientY - rect.top) / scale;
-  return svgX > ln.x + ln.width && svgX < ln.x + ln.width + 100 && svgY >= ln.y && svgY <= ln.y + ln.height;
+  return svgX > ln.x + ln.width && svgX < ln.x + ln.width + 300 && svgY >= ln.y && svgY <= ln.y + ln.height;
+}
+
+// --- Helper: check if cursor is in the children-area region of a node ---
+function isInChildrenArea(clientX: number, clientY: number, ln: LayoutNode): boolean {
+  if (!containerRef.value) return false;
+  const rect = containerRef.value.getBoundingClientRect();
+  const scale = (zoomLevel.value ?? 100) / 100;
+  const svgX = viewBox.value.x + (clientX - rect.left) / scale;
+  const svgY = viewBox.value.y + (clientY - rect.top) / scale;
+
+  const node = findNodeById(innerRoot.value, ln.id);
+  if (!node || node.children.length === 0 || node.collapsed) return false;
+
+  // Compute bounding box of children
+  const childLayouts = layout.value.nodes.filter((n) =>
+    node.children.some((c) => c.id === n.id)
+  );
+  if (childLayouts.length === 0) return false;
+
+  let top = Infinity;
+  let bottom = -Infinity;
+  let right = -Infinity;
+  for (const child of childLayouts) {
+    if (child.y < top) top = child.y;
+    if (child.y + child.height > bottom) bottom = child.y + child.height;
+    if (child.x + child.width > right) right = child.x + child.width;
+  }
+  // Pad slightly
+  top -= 10;
+  bottom += 10;
+  right += 10;
+
+  return svgX >= ln.x + ln.width && svgX <= right && svgY >= top && svgY <= bottom;
+}
+
+// --- Helper: restore dragged node to original position ---
+function restoreDraggedNode() {
+  if (!dragNodeBackup.value || !dragNodeParentId.value) return;
+  const parent = findNodeById(innerRoot.value, dragNodeParentId.value);
+  if (parent) {
+    const idx = Math.min(dragNodeIndex.value, parent.children.length);
+    parent.children.splice(idx, 0, dragNodeBackup.value);
+    emitUpdate();
+  }
 }
 
 // --- Helper: find parent of node ---
@@ -904,8 +938,20 @@ function onMouseMove(e: MouseEvent) {
     const dx = e.clientX - dragStartPos.value.x;
     const dy = e.clientY - dragStartPos.value.y;
     if (!isDragging.value && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
-      // Exceeded drag threshold
+      // Exceeded drag threshold — temporarily remove node from data
       isDragging.value = true;
+      const node = findNodeById(innerRoot.value, dragNodeId.value);
+      if (node) {
+        dragNodeBackup.value = deepClone(node);
+        const parent = findParentById(innerRoot.value, dragNodeId.value);
+        if (parent) {
+          dragNodeParentId.value = parent.id;
+          dragNodeIndex.value = parent.children.findIndex((c) => c.id === dragNodeId.value);
+        }
+        removeNodeById(innerRoot.value, dragNodeId.value);
+        // Trigger layout recalculation (node disappears, siblings reflow)
+        emitUpdate();
+      }
     }
     if (isDragging.value) {
       // Update ghost position
@@ -913,13 +959,16 @@ function onMouseMove(e: MouseEvent) {
       dragMouseSvgPos.value = svgPos;
 
       const layoutNodes = layout.value.nodes;
-      const dragParent = findParentById(innerRoot.value, dragNodeId.value);
       let target: LayoutNode | null = null;
 
       // Find which layout node the cursor is hitting or is to its right
       for (const ln of layoutNodes) {
         if (ln.id === dragNodeId.value) continue;
-        if (hitTestNode(e.clientX, e.clientY, ln) || isRightOfNode(e.clientX, e.clientY, ln)) {
+        if (
+            hitTestNode(e.clientX, e.clientY, ln)
+            || isRightOfNode(e.clientX, e.clientY, ln)
+            || isInChildrenArea(e.clientX, e.clientY, ln)
+          ) {
           target = ln;
           break;
         }
@@ -937,91 +986,45 @@ function onMouseMove(e: MouseEvent) {
         return;
       }
 
-      // Check if we're reordering within the same parent
-      // This happens when: the cursor is between siblings of the dragged node,
-      // or over the parent, or over a sibling
-      const dragParentId = dragParent ? (dragParent.id === innerRoot.value.id ? null : dragParent.id) : null;
-      const targetParent = findParentById(innerRoot.value, target.id);
-      const targetParentId = targetParent ? (targetParent.id === innerRoot.value.id ? null : targetParent.id) : null;
+      // Unified: always treat as drop-as-child
+      isSameParentReorder.value = false;
+      dropTargetId.value = target.id;
 
-      if (dragParentId && targetParentId === dragParentId) {
-        // Same parent — check for reorder
-        isSameParentReorder.value = true;
-        dropTargetId.value = null;
+      // Capture target edge info for the drop indicator
+      dropTargetEdgeX.value = target.x + target.width;
+      dropTargetCenterY.value = target.y + target.height / 2;
 
-        const siblings = dragParent ? dragParent.children : [];
-        const siblingLayouts = layoutNodes.filter(
-          (ln) => siblings.some((s) => s.id === ln.id) && ln.id !== dragNodeId.value
-        );
+      // Find where a new child placeholder should go
+      const targetNode = findNodeById(innerRoot.value, target.id);
+      const targetChildren = targetNode ? targetNode.children : [];
+      const targetChildrenLayouts = layoutNodes.filter(
+        (ln) => targetChildren.some((c) => c.id === ln.id) && ln.id !== dragNodeId.value
+      );
 
-        // Determine insertion index based on cursor Y
+      // Default: append at end of children or right below target
+      if (targetChildrenLayouts.length === 0) {
+        dropInsertY.value = target.y + target.height / 2 - 18;
+      } else {
+        // Determine insertion point based on cursor Y relative to children
         const curY = svgPos.y;
-        let insertIdx = 0;
-        for (let i = 0; i < siblingLayouts.length; i++) {
-          const sib = siblingLayouts[i]!;
-          const sibMidY = sib.y + sib.height / 2;
-          if (curY > sibMidY) {
-            insertIdx = i + 1;
-          } else {
+        let insertIdx = targetChildrenLayouts.length;
+        for (let i = 0; i < targetChildrenLayouts.length; i++) {
+          const child = targetChildrenLayouts[i]!;
+          const childMidY = child.y + child.height / 2;
+          if (curY < childMidY) {
+            insertIdx = i;
             break;
           }
         }
-
-        // Compute the Y at which to show the reorder line
         if (insertIdx === 0) {
-          dropInsertY.value = (siblingLayouts[0]?.y ?? 0) - 10;
-          reorderLineXStart.value = siblingLayouts[0]?.x ?? 0;
-        } else if (insertIdx >= siblingLayouts.length) {
-          const last = siblingLayouts[siblingLayouts.length - 1];
-          dropInsertY.value = (last ? last.y + last.height : 0) + 10;
-          reorderLineXStart.value = last?.x ?? 0;
+          dropInsertY.value = targetChildrenLayouts[0]!.y - 18 - 20;
+        } else if (insertIdx >= targetChildrenLayouts.length) {
+          const last = targetChildrenLayouts[targetChildrenLayouts.length - 1]!;
+          dropInsertY.value = last.y + last.height + 20;
         } else {
-          const prev = siblingLayouts[insertIdx - 1];
-          const next = siblingLayouts[insertIdx];
-          dropInsertY.value = (prev!.y + prev!.height + next!.y) / 2;
-          reorderLineXStart.value = prev?.x ?? next?.x ?? 0;
-        }
-      } else {
-        // Cross-parent move
-        isSameParentReorder.value = false;
-        dropTargetId.value = target.id;
-
-        // Capture target edge info for the drop indicator
-        dropTargetEdgeX.value = target.x + target.width;
-        dropTargetCenterY.value = target.y + target.height / 2;
-
-        // Find where a new child placeholder should go
-        const targetNode = findNodeById(innerRoot.value, target.id);
-        const targetChildren = targetNode ? targetNode.children : [];
-        const targetChildrenLayouts = layoutNodes.filter(
-          (ln) => targetChildren.some((c) => c.id === ln.id)
-        );
-
-        // Default: append at end of children or right below target
-        if (targetChildrenLayouts.length === 0) {
-          dropInsertY.value = target.y + target.height / 2 - 18;
-        } else {
-          // Determine insertion point based on cursor Y relative to children
-          const curY = svgPos.y;
-          let insertIdx = targetChildrenLayouts.length;
-          for (let i = 0; i < targetChildrenLayouts.length; i++) {
-            const child = targetChildrenLayouts[i]!;
-            const childMidY = child.y + child.height / 2;
-            if (curY < childMidY) {
-              insertIdx = i;
-              break;
-            }
-          }
-          if (insertIdx === 0) {
-            dropInsertY.value = targetChildrenLayouts[0]!.y - 18 - 20;
-          } else if (insertIdx >= targetChildrenLayouts.length) {
-            const last = targetChildrenLayouts[targetChildrenLayouts.length - 1]!;
-            dropInsertY.value = last.y + last.height + 20;
-          } else {
-            const prev = targetChildrenLayouts[insertIdx - 1]!;
-            const next = targetChildrenLayouts[insertIdx]!;
-            dropInsertY.value = (prev.y + prev.height + next.y) / 2 - 18;
-          }
+          const prev = targetChildrenLayouts[insertIdx - 1]!;
+          const next = targetChildrenLayouts[insertIdx]!;
+          dropInsertY.value = (prev.y + prev.height + next.y) / 2 - 18;
         }
       }
       return;
@@ -1037,49 +1040,13 @@ function onMouseMove(e: MouseEvent) {
 }
 
 function onMouseUp() {
-  if (isDragging.value && dragNodeId.value) {
-    if (isSameParentReorder.value && dropInsertY.value !== -1) {
-      // Reorder within same parent
-      const dragParent = findParentById(innerRoot.value, dragNodeId.value);
-      if (dragParent) {
-        const children = dragParent.children;
-        const dragIdx = children.findIndex((c) => c.id === dragNodeId.value);
-        if (dragIdx !== -1) {
-          // Build a list excluding the dragged node to compute the new index
-          const siblings = children.filter((c) => c.id !== dragNodeId.value);
-          const siblingLayouts = layout.value.nodes.filter(
-            (ln) => siblings.some((s) => s.id === ln.id)
-          );
-          const curY = dragMouseSvgPos.value.y;
-          let insertIdx = 0;
-          for (let i = 0; i < siblingLayouts.length; i++) {
-            const sib = siblingLayouts[i]!;
-            const sibMidY = sib.y + sib.height / 2;
-            if (curY > sibMidY) {
-              insertIdx = i + 1;
-            } else {
-              break;
-            }
-          }
-          if (insertIdx !== dragIdx) {
-            pushState();
-            const [node] = children.splice(dragIdx, 1);
-            // Adjust insertIdx if needed (removing shifted indices)
-            if (insertIdx > dragIdx) insertIdx--;
-            children.splice(insertIdx, 0, node!);
-            selectedNodeId.value = dragNodeId.value;
-            emitUpdate();
-          }
-        }
-      }
-    } else if (dropTargetId.value) {
-      // Cross-parent reparent
-      const nodeId = dragNodeId.value;
+  if (isDragging.value && dragNodeId.value && dragNodeBackup.value !== null) {
+    if (dropTargetId.value) {
+      // Successful drop: use the backup node, add to target at cursor position
       const targetId = dropTargetId.value;
-      const node = findNodeById(innerRoot.value, nodeId);
-      if (node && targetId !== nodeId && !isDescendantOf(innerRoot.value, targetId, nodeId)) {
+      const node = dragNodeBackup.value;
+      if (targetId !== node.id && !isDescendantOf(innerRoot.value, targetId, node.id)) {
         pushState();
-        removeNodeById(innerRoot.value, nodeId);
         const target = findNodeById(innerRoot.value, targetId);
         if (target) {
           // Determine insertion index among target's children
@@ -1097,16 +1064,21 @@ function onMouseUp() {
             }
           }
           target.children.splice(insertIdx, 0, node);
-          // Uncollapse if needed
           target.collapsed = false;
         }
-        selectedNodeId.value = nodeId;
+        selectedNodeId.value = node.id;
         emitUpdate();
       }
+    } else {
+      // No valid drop target — restore node to original position
+      restoreDraggedNode();
     }
     // Reset drag state
     isDragging.value = false;
     dragNodeId.value = null;
+    dragNodeBackup.value = null;
+    dragNodeParentId.value = null;
+    dragNodeIndex.value = -1;
     dropTargetId.value = null;
     dropInsertY.value = -1;
     isSameParentReorder.value = false;
@@ -1383,8 +1355,7 @@ onMounted(() => {
 
 /* ---- Drag and Drop ---- */
 .mm-node--dragging {
-  opacity: 0.3;
-  cursor: grabbing;
+  display: none;
 }
 
 .mm-node--drop-target .mm-node-rect {
