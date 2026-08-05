@@ -72,7 +72,14 @@ function measureSubtree(node: MindMapNode, depth: number = 0): MeasuredNode {
     child.node.x = STEP_X;
   }
 
-  // Shift contour entries after centering and offset by x
+  // If single child taller than parent, shift parent to align with child center
+  if (measuredChildren.length === 1 && totalChildrenHeight > NODE_HEIGHT) {
+    const child = measuredChildren[0]!;
+    const childCenter = child.totalHeight / 2;
+    ln.y = childCenter - NODE_HEIGHT / 2;
+  }
+
+  // Shift contour entries after centering
   for (const child of measuredChildren) {
     for (const [d, range] of child.contour) {
       const adjusted = { min: range.min + child.node.y, max: range.max + child.node.y };
@@ -88,7 +95,10 @@ function measureSubtree(node: MindMapNode, depth: number = 0): MeasuredNode {
     }
   }
 
-  const totalHeight = Math.max(NODE_HEIGHT, currentY);
+  // Update self contour at depth to reflect adjusted parent position
+  contour.set(depth, { min: ln.y, max: ln.y + NODE_HEIGHT });
+
+  const totalHeight = Math.max(NODE_HEIGHT, totalChildrenHeight);
   return { node: ln, totalHeight, contour };
 }
 
