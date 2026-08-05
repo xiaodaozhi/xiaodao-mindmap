@@ -300,6 +300,69 @@
             />
           </g>
         </g>
+
+        <!-- Drop indicator for cross-parent move (dashed placeholder child + connection) -->
+        <g v-if="isDragging && dropTargetId && dropInsertY !== -1 && !isSameParentReorder" class="mm-drop-indicator">
+          <path
+            :d="getBezierPath({ x: dropTargetEdgeX, y: dropTargetCenterY }, { x: dropTargetEdgeX + 80, y: dropInsertY + 18 })"
+            fill="none"
+            stroke="#16a34a"
+            stroke-width="2"
+            stroke-dasharray="6, 3"
+          />
+          <rect
+            :x="dropTargetEdgeX + 80"
+            :y="dropInsertY"
+            width="120"
+            height="36"
+            rx="4"
+            ry="4"
+            fill="none"
+            stroke="#16a34a"
+            stroke-width="2"
+            stroke-dasharray="6, 3"
+          />
+        </g>
+
+        <!-- Same-parent reorder line -->
+        <line
+          v-if="isDragging && dragNodeId && isSameParentReorder && dropInsertY !== -1"
+          :x1="(reorderLineXStart)"
+          :x2="(reorderLineXStart + 140)"
+          :y1="dropInsertY"
+          :y2="dropInsertY"
+          stroke="#16a34a"
+          stroke-width="3"
+          stroke-linecap="round"
+        />
+
+        <!-- Drag ghost: follows the cursor -->
+        <g v-if="isDragging && draggedNodeText" class="mm-drag-ghost">
+          <rect
+            :x="dragMouseSvgPos.x - 60"
+            :y="dragMouseSvgPos.y - 18"
+            width="120"
+            height="36"
+            rx="4"
+            ry="4"
+            fill="var(--mm-node-bg)"
+            stroke="var(--mm-selected-border)"
+            stroke-width="2"
+            stroke-dasharray="5, 3"
+            opacity="0.75"
+          />
+          <text
+            :x="dragMouseSvgPos.x"
+            :y="dragMouseSvgPos.y"
+            text-anchor="middle"
+            dominant-baseline="central"
+            :fill="'var(--mm-node-text)'"
+            font-size="13"
+            font-family="Arial, sans-serif"
+            opacity="0.75"
+            style="pointer-events: none; user-select: none;"
+          >{{ draggedNodeText }}</text>
+        </g>
       </svg>
     </div>
   </div>
@@ -396,6 +459,13 @@ const isDragging = ref(false);
 const dragNodeId = ref<string | null>(null);
 const dropTargetId = ref<string | null>(null);
 const dragStartPos = ref({ x: 0, y: 0 });
+const dragMouseSvgPos = ref({ x: 0, y: 0 });
+const dropInsertY = ref(-1);               // Y position for drop indicator
+const isSameParentReorder = ref(false);     // true = reorder within same parent
+const draggedNodeText = ref('');            // text for ghost display
+const dropTargetEdgeX = ref(0);             // right edge X of drop target
+const dropTargetCenterY = ref(0);           // center Y of drop target
+const reorderLineXStart = ref(0);           // X start of reorder line
 
 // --- ViewBox / Panning / Zoom ---
 const zoomLevels = [10, 25, 33, 50, 75, 100, 150, 200, 300, 500, 700, 1000];
@@ -476,6 +546,16 @@ function hitTestNode(clientX: number, clientY: number, ln: LayoutNode): boolean 
   const svgX = viewBox.value.x + (clientX - rect.left) / scale;
   const svgY = viewBox.value.y + (clientY - rect.top) / scale;
   return svgX >= ln.x && svgX <= ln.x + ln.width && svgY >= ln.y && svgY <= ln.y + ln.height;
+}
+
+// --- Helper: check if cursor is to the right of a node (for drop-as-child) ---
+function isRightOfNode(clientX: number, clientY: number, ln: LayoutNode): boolean {
+  if (!containerRef.value) return false;
+  const rect = containerRef.value.getBoundingClientRect();
+  const scale = (zoomLevel.value ?? 100) / 100;
+  const svgX = viewBox.value.x + (clientX - rect.left) / scale;
+  const svgY = viewBox.value.y + (clientY - rect.top) / scale;
+  return svgX > ln.x + ln.width && svgX < ln.x + ln.width + 100 && svgY >= ln.y && svgY <= ln.y + ln.height;
 }
 
 // --- Helper: find parent of node ---
@@ -781,6 +861,16 @@ function getBezierPath(
 }
 
 // --- Mouse events ---
+function clientToSvg(clientX: number, clientY: number): { x: number; y: number } {
+  if (!containerRef.value) return { x: 0, y: 0 };
+  const rect = containerRef.value.getBoundingClientRect();
+  const scale = (zoomLevel.value ?? 100) / 100;
+  return {
+    x: viewBox.value.x + (clientX - rect.left) / scale,
+    y: viewBox.value.y + (clientY - rect.top) / scale,
+  };
+}
+
 function onNodeMouseDown(e: MouseEvent, ln: LayoutNode) {
   if (e.button !== 0) return;
   // Don't allow dragging the root node
@@ -793,6 +883,9 @@ function onNodeMouseDown(e: MouseEvent, ln: LayoutNode) {
   dragNodeId.value = ln.id;
   isDragging.value = false;
   dropTargetId.value = null;
+  dropInsertY.value = -1;
+  isSameParentReorder.value = false;
+  draggedNodeText.value = ln.text ?? '';
   // Prevent canvas panning from starting
   e.stopPropagation();
 }
@@ -815,21 +908,122 @@ function onMouseMove(e: MouseEvent) {
       isDragging.value = true;
     }
     if (isDragging.value) {
-      // Find drop target under cursor
+      // Update ghost position
+      const svgPos = clientToSvg(e.clientX, e.clientY);
+      dragMouseSvgPos.value = svgPos;
+
       const layoutNodes = layout.value.nodes;
+      const dragParent = findParentById(innerRoot.value, dragNodeId.value);
       let target: LayoutNode | null = null;
+
+      // Find which layout node the cursor is hitting or is to its right
       for (const ln of layoutNodes) {
         if (ln.id === dragNodeId.value) continue;
-        if (hitTestNode(e.clientX, e.clientY, ln)) {
+        if (hitTestNode(e.clientX, e.clientY, ln) || isRightOfNode(e.clientX, e.clientY, ln)) {
           target = ln;
           break;
         }
       }
-      // Validate: can't drop on self, descendants of the dragged node
+
+      // Validate: can't drop on self or descendants of the dragged node
       if (target && isDescendantOf(innerRoot.value, target.id, dragNodeId.value)) {
         target = null;
       }
-      dropTargetId.value = target ? target.id : null;
+
+      if (!target) {
+        dropTargetId.value = null;
+        dropInsertY.value = -1;
+        isSameParentReorder.value = false;
+        return;
+      }
+
+      // Check if we're reordering within the same parent
+      // This happens when: the cursor is between siblings of the dragged node,
+      // or over the parent, or over a sibling
+      const dragParentId = dragParent ? (dragParent.id === innerRoot.value.id ? null : dragParent.id) : null;
+      const targetParent = findParentById(innerRoot.value, target.id);
+      const targetParentId = targetParent ? (targetParent.id === innerRoot.value.id ? null : targetParent.id) : null;
+
+      if (dragParentId && targetParentId === dragParentId) {
+        // Same parent — check for reorder
+        isSameParentReorder.value = true;
+        dropTargetId.value = null;
+
+        const siblings = dragParent ? dragParent.children : [];
+        const siblingLayouts = layoutNodes.filter(
+          (ln) => siblings.some((s) => s.id === ln.id) && ln.id !== dragNodeId.value
+        );
+
+        // Determine insertion index based on cursor Y
+        const curY = svgPos.y;
+        let insertIdx = 0;
+        for (let i = 0; i < siblingLayouts.length; i++) {
+          const sib = siblingLayouts[i]!;
+          const sibMidY = sib.y + sib.height / 2;
+          if (curY > sibMidY) {
+            insertIdx = i + 1;
+          } else {
+            break;
+          }
+        }
+
+        // Compute the Y at which to show the reorder line
+        if (insertIdx === 0) {
+          dropInsertY.value = (siblingLayouts[0]?.y ?? 0) - 10;
+          reorderLineXStart.value = siblingLayouts[0]?.x ?? 0;
+        } else if (insertIdx >= siblingLayouts.length) {
+          const last = siblingLayouts[siblingLayouts.length - 1];
+          dropInsertY.value = (last ? last.y + last.height : 0) + 10;
+          reorderLineXStart.value = last?.x ?? 0;
+        } else {
+          const prev = siblingLayouts[insertIdx - 1];
+          const next = siblingLayouts[insertIdx];
+          dropInsertY.value = (prev!.y + prev!.height + next!.y) / 2;
+          reorderLineXStart.value = prev?.x ?? next?.x ?? 0;
+        }
+      } else {
+        // Cross-parent move
+        isSameParentReorder.value = false;
+        dropTargetId.value = target.id;
+
+        // Capture target edge info for the drop indicator
+        dropTargetEdgeX.value = target.x + target.width;
+        dropTargetCenterY.value = target.y + target.height / 2;
+
+        // Find where a new child placeholder should go
+        const targetNode = findNodeById(innerRoot.value, target.id);
+        const targetChildren = targetNode ? targetNode.children : [];
+        const targetChildrenLayouts = layoutNodes.filter(
+          (ln) => targetChildren.some((c) => c.id === ln.id)
+        );
+
+        // Default: append at end of children or right below target
+        if (targetChildrenLayouts.length === 0) {
+          dropInsertY.value = target.y + target.height / 2 - 18;
+        } else {
+          // Determine insertion point based on cursor Y relative to children
+          const curY = svgPos.y;
+          let insertIdx = targetChildrenLayouts.length;
+          for (let i = 0; i < targetChildrenLayouts.length; i++) {
+            const child = targetChildrenLayouts[i]!;
+            const childMidY = child.y + child.height / 2;
+            if (curY < childMidY) {
+              insertIdx = i;
+              break;
+            }
+          }
+          if (insertIdx === 0) {
+            dropInsertY.value = targetChildrenLayouts[0]!.y - 18 - 20;
+          } else if (insertIdx >= targetChildrenLayouts.length) {
+            const last = targetChildrenLayouts[targetChildrenLayouts.length - 1]!;
+            dropInsertY.value = last.y + last.height + 20;
+          } else {
+            const prev = targetChildrenLayouts[insertIdx - 1]!;
+            const next = targetChildrenLayouts[insertIdx]!;
+            dropInsertY.value = (prev.y + prev.height + next.y) / 2 - 18;
+          }
+        }
+      }
       return;
     }
   }
@@ -843,31 +1037,85 @@ function onMouseMove(e: MouseEvent) {
 }
 
 function onMouseUp() {
-  if (isDragging.value && dragNodeId.value && dropTargetId.value) {
-    // Perform reparent
-    const nodeId = dragNodeId.value;
-    const targetId = dropTargetId.value;
-    const node = findNodeById(innerRoot.value, nodeId);
-    if (node && targetId !== nodeId && !isDescendantOf(innerRoot.value, targetId, nodeId)) {
-      pushState();
-      removeNodeById(innerRoot.value, nodeId);
-      const target = findNodeById(innerRoot.value, targetId);
-      if (target) {
-        target.children.push(node);
-        // Uncollapse if needed
-        target.collapsed = false;
+  if (isDragging.value && dragNodeId.value) {
+    if (isSameParentReorder.value && dropInsertY.value !== -1) {
+      // Reorder within same parent
+      const dragParent = findParentById(innerRoot.value, dragNodeId.value);
+      if (dragParent) {
+        const children = dragParent.children;
+        const dragIdx = children.findIndex((c) => c.id === dragNodeId.value);
+        if (dragIdx !== -1) {
+          // Build a list excluding the dragged node to compute the new index
+          const siblings = children.filter((c) => c.id !== dragNodeId.value);
+          const siblingLayouts = layout.value.nodes.filter(
+            (ln) => siblings.some((s) => s.id === ln.id)
+          );
+          const curY = dragMouseSvgPos.value.y;
+          let insertIdx = 0;
+          for (let i = 0; i < siblingLayouts.length; i++) {
+            const sib = siblingLayouts[i]!;
+            const sibMidY = sib.y + sib.height / 2;
+            if (curY > sibMidY) {
+              insertIdx = i + 1;
+            } else {
+              break;
+            }
+          }
+          if (insertIdx !== dragIdx) {
+            pushState();
+            const [node] = children.splice(dragIdx, 1);
+            // Adjust insertIdx if needed (removing shifted indices)
+            if (insertIdx > dragIdx) insertIdx--;
+            children.splice(insertIdx, 0, node!);
+            selectedNodeId.value = dragNodeId.value;
+            emitUpdate();
+          }
+        }
       }
-      selectedNodeId.value = nodeId;
-      emitUpdate();
+    } else if (dropTargetId.value) {
+      // Cross-parent reparent
+      const nodeId = dragNodeId.value;
+      const targetId = dropTargetId.value;
+      const node = findNodeById(innerRoot.value, nodeId);
+      if (node && targetId !== nodeId && !isDescendantOf(innerRoot.value, targetId, nodeId)) {
+        pushState();
+        removeNodeById(innerRoot.value, nodeId);
+        const target = findNodeById(innerRoot.value, targetId);
+        if (target) {
+          // Determine insertion index among target's children
+          const curY = dragMouseSvgPos.value.y;
+          let insertIdx = target.children.length;
+          const childLayouts = layout.value.nodes.filter(
+            (ln) => target.children.some((c) => c.id === ln.id)
+          );
+          for (let i = 0; i < childLayouts.length; i++) {
+            const child = childLayouts[i]!;
+            const childMidY = child.y + child.height / 2;
+            if (curY < childMidY) {
+              insertIdx = i;
+              break;
+            }
+          }
+          target.children.splice(insertIdx, 0, node);
+          // Uncollapse if needed
+          target.collapsed = false;
+        }
+        selectedNodeId.value = nodeId;
+        emitUpdate();
+      }
     }
+    // Reset drag state
+    isDragging.value = false;
+    dragNodeId.value = null;
+    dropTargetId.value = null;
+    dropInsertY.value = -1;
+    isSameParentReorder.value = false;
   } else if (!isDragging.value && dragNodeId.value) {
     // Click without drag — just select
     selectedNodeId.value = dragNodeId.value;
+    dragNodeId.value = null;
   }
 
-  isDragging.value = false;
-  dragNodeId.value = null;
-  dropTargetId.value = null;
   isPanning.value = false;
 }
 
@@ -1135,7 +1383,7 @@ onMounted(() => {
 
 /* ---- Drag and Drop ---- */
 .mm-node--dragging {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: grabbing;
 }
 
@@ -1146,6 +1394,14 @@ onMounted(() => {
 
 .mindmap-theme-dark .mm-node--drop-target .mm-node-rect {
   filter: brightness(1.3);
+}
+
+.mm-drag-ghost {
+  pointer-events: none;
+}
+
+.mm-drop-indicator {
+  pointer-events: none;
 }
 
 .mm-edit-input {
