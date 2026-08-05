@@ -33,5 +33,9 @@ export function useUndoRedo(getCurrentNode: () => MindMapNode, onRestore: (node:
     onRestore(deepClone(next));
   }
 
-  return { canUndo, canRedo, pushState, undo, redo };
+  function popUndo() {
+    undoStack.value.pop();
+  }
+
+  return { canUndo, canRedo, pushState, popUndo, undo, redo };
 }

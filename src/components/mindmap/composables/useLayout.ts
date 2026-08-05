@@ -15,6 +15,16 @@ interface MeasuredNode {
   contour: Map<number, { min: number; max: number }>;
 }
 
+function getContourBounds(contour: MeasuredNode['contour']): { min: number; max: number } {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const range of contour.values()) {
+    min = Math.min(min, range.min);
+    max = Math.max(max, range.max);
+  }
+  return { min, max };
+}
+
 function measureSubtree(node: MindMapNode, depth: number = 0): MeasuredNode {
   const ln: LayoutNode = {
     ...node,
@@ -38,7 +48,7 @@ function measureSubtree(node: MindMapNode, depth: number = 0): MeasuredNode {
   const measuredChildren = node.children.map((c) => measureSubtree(c, depth + 1));
   ln.children = measuredChildren.map((m) => m.node);
 
-  // Arrange children vertically, using contours to avoid overlap.
+  // Arrange children vertically by their actual subtree bounds.
   // A single direct child should sit exactly to the right of its parent, even
   // when that child owns a taller subtree.
   let totalChildrenHeight = NODE_HEIGHT;
@@ -47,37 +57,19 @@ function measureSubtree(node: MindMapNode, depth: number = 0): MeasuredNode {
     measuredChildren[0]!.node.x = STEP_X;
     totalChildrenHeight = measuredChildren[0]!.totalHeight;
   } else {
-    let currentY = 0;
-    for (let i = 0; i < measuredChildren.length; i++) {
-      const child = measuredChildren[i];
-      if (i > 0) {
-        // Compute the minimum absolute y for this child to avoid overlap with previous sibling
-        // by checking contours across all shared depth levels
-        const prevChild = measuredChildren[i - 1];
-        let minY = currentY;
-        for (let d = depth + 1; ; d++) {
-          const prevContour = prevChild!.contour.get(d);
-          const currContour = child!.contour.get(d);
-          if (!prevContour && !currContour) break;
-          if (prevContour && currContour) {
-            // child.y + currContour.min >= prevChild.y + prevContour.max + V_GAP
-            const contourY = prevChild!.node.y + prevContour.max - currContour.min + V_GAP;
-            if (contourY > minY) minY = contourY;
-          }
-        }
-        currentY = minY;
-      }
-      child!.node.y = currentY;
-      currentY += child!.totalHeight;
+    let currentBottom = 0;
+    for (const child of measuredChildren) {
+      const childBounds = getContourBounds(child.contour);
+      child.node.y = currentBottom - childBounds.min;
+      child.node.x = STEP_X;
+      currentBottom = child.node.y + childBounds.max + V_GAP;
     }
 
     // Center children vertically around this node
-    totalChildrenHeight = currentY;
-    const center = totalChildrenHeight / 2;
-    const offset = center - NODE_HEIGHT / 2;
+    totalChildrenHeight = currentBottom - V_GAP;
+    const offset = totalChildrenHeight / 2 - NODE_HEIGHT / 2;
     for (const child of measuredChildren) {
       child.node.y -= offset;
-      child.node.x = STEP_X;
     }
   }
 
@@ -100,7 +92,8 @@ function measureSubtree(node: MindMapNode, depth: number = 0): MeasuredNode {
   // Update self contour at depth to reflect adjusted parent position
   contour.set(depth, { min: ln.y, max: ln.y + NODE_HEIGHT });
 
-  const totalHeight = Math.max(NODE_HEIGHT, totalChildrenHeight);
+  const bounds = getContourBounds(contour);
+  const totalHeight = Math.max(NODE_HEIGHT, bounds.max - bounds.min, totalChildrenHeight);
   return { node: ln, totalHeight, contour };
 }
 

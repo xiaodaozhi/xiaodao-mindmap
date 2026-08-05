@@ -414,7 +414,7 @@ function emitUpdate() {
 const layout = useLayout(innerRoot as Ref<MindMapNode>);
 
 // --- Undo/Redo ---
-const { canUndo, canRedo, pushState, undo, redo } = useUndoRedo(
+const { canUndo, canRedo, pushState, popUndo, undo, redo } = useUndoRedo(
   () => innerRoot.value,
   (node) => {
     innerRoot.value = node;
@@ -437,6 +437,7 @@ const selectedNodeId = ref<string | null>(null);
 const editingNodeId = ref<string | null>(null);
 const editText = ref('');
 const editInputRef = ref<HTMLInputElement[]>();
+const isNewNodeEdit = ref(false);
 
 const wrapperRef = ref<HTMLElement>();
 const containerRef = ref<HTMLElement>();
@@ -665,6 +666,7 @@ function startEdit(ln: LayoutNode) {
   editingNodeId.value = ln.id;
   const node = findNodeById(innerRoot.value, ln.id);
   editText.value = node?.text === t('node.defaultText') ? '' : (node?.text ?? '');
+  isNewNodeEdit.value = false;
   nextTick(() => {
     const inputs = document.querySelectorAll('.mm-edit-input');
     const last = inputs[inputs.length - 1] as HTMLInputElement;
@@ -680,6 +682,7 @@ function startEditById(id: string) {
   if (!node) return;
   editingNodeId.value = id;
   editText.value = node.text === t('node.defaultText') ? '' : node.text;
+  isNewNodeEdit.value = true;
   nextTick(() => {
     const inputs = document.querySelectorAll('.mm-edit-input');
     const last = inputs[inputs.length - 1] as HTMLInputElement;
@@ -694,7 +697,11 @@ function finishEdit() {
   if (!editingNodeId.value) return;
   const node = findNodeById(innerRoot.value, editingNodeId.value);
   if (node) {
-    pushState();
+    // Don't pushState for newly created nodes — the creation already did it.
+    // This way create+rename is a single undo step.
+    if (!isNewNodeEdit.value) {
+      pushState();
+    }
     node.text = editText.value.trim() || t('node.defaultText');
     emitUpdate();
   }
@@ -942,6 +949,8 @@ function onMouseMove(e: MouseEvent) {
       isDragging.value = true;
       const node = findNodeById(innerRoot.value, dragNodeId.value);
       if (node) {
+        // Capture state before any mutation so the whole move is a single undo step
+        pushState();
         dragNodeBackup.value = deepClone(node);
         const parent = findParentById(innerRoot.value, dragNodeId.value);
         if (parent) {
@@ -1046,7 +1055,6 @@ function onMouseUp() {
       const targetId = dropTargetId.value;
       const node = dragNodeBackup.value;
       if (targetId !== node.id && !isDescendantOf(innerRoot.value, targetId, node.id)) {
-        pushState();
         const target = findNodeById(innerRoot.value, targetId);
         if (target) {
           // Determine insertion index among target's children
@@ -1070,8 +1078,9 @@ function onMouseUp() {
         emitUpdate();
       }
     } else {
-      // No valid drop target — restore node to original position
+      // No valid drop target — restore node to original position and discard undo entry
       restoreDraggedNode();
+      popUndo();
     }
     // Reset drag state
     isDragging.value = false;
