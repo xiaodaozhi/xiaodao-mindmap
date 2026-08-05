@@ -199,7 +199,7 @@
         <g
           v-for="ln in layout.nodes"
           :key="ln.id"
-          :class="['mm-node-group', nodeClass(ln)]"
+          :class="['mm-node-group', nodeClass(ln), nodeDragClass(ln)]"
           @mousedown.stop="onNodeMouseDown($event, ln)"
           @dblclick.stop="startEdit(ln)"
         >
@@ -212,8 +212,8 @@
             :rx="nodeRadius(ln)"
             :ry="nodeRadius(ln)"
             :fill="nodeFill(ln)"
-            :stroke="selectedNodeId === ln.id ? 'var(--mm-selected-border)' : nodeBorder(ln)"
-            :stroke-width="selectedNodeId === ln.id ? 2 : 1"
+            :stroke="nodeStrokeStyle(ln)"
+            :stroke-width="nodeStrokeWidth(ln)"
             class="mm-node-rect"
           />
 
@@ -391,6 +391,12 @@ const wrapperRef = ref<HTMLElement>();
 const containerRef = ref<HTMLElement>();
 const svgRef = ref<SVGSVGElement>();
 
+// --- Drag & Drop ---
+const isDragging = ref(false);
+const dragNodeId = ref<string | null>(null);
+const dropTargetId = ref<string | null>(null);
+const dragStartPos = ref({ x: 0, y: 0 });
+
 // --- ViewBox / Panning / Zoom ---
 const zoomLevels = [10, 25, 33, 50, 75, 100, 150, 200, 300, 500, 700, 1000];
 const zoomIndex = ref(6); // index of 100%
@@ -453,6 +459,23 @@ function findNodeById(root: MindMapNode, id: string): MindMapNode | null {
     if (found) return found;
   }
   return null;
+}
+
+// --- Helper: check if a node is a descendant of another ---
+function isDescendantOf(root: MindMapNode, nodeId: string, ancestorId: string): boolean {
+  const ancestor = findNodeById(root, ancestorId);
+  if (!ancestor) return false;
+  return !!findNodeById(ancestor, nodeId);
+}
+
+// --- Helper: hit-test a layout node ---
+function hitTestNode(clientX: number, clientY: number, ln: LayoutNode): boolean {
+  if (!containerRef.value) return false;
+  const rect = containerRef.value.getBoundingClientRect();
+  const scale = (zoomLevel.value ?? 100) / 100;
+  const svgX = viewBox.value.x + (clientX - rect.left) / scale;
+  const svgY = viewBox.value.y + (clientY - rect.top) / scale;
+  return svgX >= ln.x && svgX <= ln.x + ln.width && svgY >= ln.y && svgY <= ln.y + ln.height;
 }
 
 // --- Helper: find parent of node ---
@@ -725,6 +748,25 @@ function nodeRadius(_ln: LayoutNode): number {
   return 4;
 }
 
+function nodeDragClass(ln: LayoutNode): string {
+  if (ln.id === dragNodeId.value && isDragging.value) return 'mm-node--dragging';
+  if (ln.id === dropTargetId.value && isDragging.value) return 'mm-node--drop-target';
+  return '';
+}
+
+function nodeStrokeStyle(ln: LayoutNode): string {
+  if (ln.id === dropTargetId.value && isDragging.value) return '#16a34a';
+  if (selectedNodeId.value === ln.id) return 'var(--mm-selected-border)';
+  return nodeBorder(ln);
+}
+
+function nodeStrokeWidth(ln: LayoutNode): number {
+  if (ln.id === dropTargetId.value && isDragging.value) return 2.5;
+  if (ln.id === dragNodeId.value && isDragging.value) return 2;
+  if (selectedNodeId.value === ln.id) return 2;
+  return 1;
+}
+
 // --- Bezier path ---
 function getBezierPath(
   from: { x: number; y: number },
@@ -741,7 +783,18 @@ function getBezierPath(
 // --- Mouse events ---
 function onNodeMouseDown(e: MouseEvent, ln: LayoutNode) {
   if (e.button !== 0) return;
-  selectedNodeId.value = ln.id;
+  // Don't allow dragging the root node
+  if (ln.id === innerRoot.value.id) {
+    selectedNodeId.value = ln.id;
+    return;
+  }
+  // Record drag start; defer selection to mouseup
+  dragStartPos.value = { x: e.clientX, y: e.clientY };
+  dragNodeId.value = ln.id;
+  isDragging.value = false;
+  dropTargetId.value = null;
+  // Prevent canvas panning from starting
+  e.stopPropagation();
 }
 
 function onCanvasMouseDown(e: MouseEvent) {
@@ -754,6 +807,33 @@ function onCanvasMouseDown(e: MouseEvent) {
 }
 
 function onMouseMove(e: MouseEvent) {
+  if (dragNodeId.value) {
+    const dx = e.clientX - dragStartPos.value.x;
+    const dy = e.clientY - dragStartPos.value.y;
+    if (!isDragging.value && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      // Exceeded drag threshold
+      isDragging.value = true;
+    }
+    if (isDragging.value) {
+      // Find drop target under cursor
+      const layoutNodes = layout.value.nodes;
+      let target: LayoutNode | null = null;
+      for (const ln of layoutNodes) {
+        if (ln.id === dragNodeId.value) continue;
+        if (hitTestNode(e.clientX, e.clientY, ln)) {
+          target = ln;
+          break;
+        }
+      }
+      // Validate: can't drop on self, descendants of the dragged node
+      if (target && isDescendantOf(innerRoot.value, target.id, dragNodeId.value)) {
+        target = null;
+      }
+      dropTargetId.value = target ? target.id : null;
+      return;
+    }
+  }
+
   if (!isPanning.value) return;
   const scale = (zoomLevel.value ?? 100) / 100;
   const dx = (e.clientX - panStart.value.x) / scale;
@@ -763,6 +843,31 @@ function onMouseMove(e: MouseEvent) {
 }
 
 function onMouseUp() {
+  if (isDragging.value && dragNodeId.value && dropTargetId.value) {
+    // Perform reparent
+    const nodeId = dragNodeId.value;
+    const targetId = dropTargetId.value;
+    const node = findNodeById(innerRoot.value, nodeId);
+    if (node && targetId !== nodeId && !isDescendantOf(innerRoot.value, targetId, nodeId)) {
+      pushState();
+      removeNodeById(innerRoot.value, nodeId);
+      const target = findNodeById(innerRoot.value, targetId);
+      if (target) {
+        target.children.push(node);
+        // Uncollapse if needed
+        target.collapsed = false;
+      }
+      selectedNodeId.value = nodeId;
+      emitUpdate();
+    }
+  } else if (!isDragging.value && dragNodeId.value) {
+    // Click without drag — just select
+    selectedNodeId.value = dragNodeId.value;
+  }
+
+  isDragging.value = false;
+  dragNodeId.value = null;
+  dropTargetId.value = null;
   isPanning.value = false;
 }
 
@@ -1027,6 +1132,22 @@ onMounted(() => {
 .mm-collapse-btn circle:hover {
   fill: var(--mm-toolbar-hover);
 }
+
+/* ---- Drag and Drop ---- */
+.mm-node--dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+.mm-node--drop-target .mm-node-rect {
+  stroke: #16a34a !important;
+  filter: brightness(1.08);
+}
+
+.mindmap-theme-dark .mm-node--drop-target .mm-node-rect {
+  filter: brightness(1.3);
+}
+
 .mm-edit-input {
   width: 100%;
   height: 100%;
