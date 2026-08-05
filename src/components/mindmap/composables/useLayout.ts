@@ -38,45 +38,47 @@ function measureSubtree(node: MindMapNode, depth: number = 0): MeasuredNode {
   const measuredChildren = node.children.map((c) => measureSubtree(c, depth + 1));
   ln.children = measuredChildren.map((m) => m.node);
 
-  // Arrange children vertically, using contours to avoid overlap
-  let currentY = 0;
-  for (let i = 0; i < measuredChildren.length; i++) {
-    const child = measuredChildren[i];
-    if (i > 0) {
-      // Compute the minimum absolute y for this child to avoid overlap with previous sibling
-      // by checking contours across all shared depth levels
-      const prevChild = measuredChildren[i - 1];
-      let minY = currentY;
-      for (let d = depth + 1; ; d++) {
-        const prevContour = prevChild!.contour.get(d);
-        const currContour = child!.contour.get(d);
-        if (!prevContour && !currContour) break;
-        if (prevContour && currContour) {
-          // child.y + currContour.min >= prevChild.y + prevContour.max + V_GAP
-          const contourY = prevChild!.node.y + prevContour.max - currContour.min + V_GAP;
-          if (contourY > minY) minY = contourY;
+  // Arrange children vertically, using contours to avoid overlap.
+  // A single direct child should sit exactly to the right of its parent, even
+  // when that child owns a taller subtree.
+  let totalChildrenHeight = NODE_HEIGHT;
+  if (measuredChildren.length === 1) {
+    measuredChildren[0]!.node.y = 0;
+    measuredChildren[0]!.node.x = STEP_X;
+    totalChildrenHeight = measuredChildren[0]!.totalHeight;
+  } else {
+    let currentY = 0;
+    for (let i = 0; i < measuredChildren.length; i++) {
+      const child = measuredChildren[i];
+      if (i > 0) {
+        // Compute the minimum absolute y for this child to avoid overlap with previous sibling
+        // by checking contours across all shared depth levels
+        const prevChild = measuredChildren[i - 1];
+        let minY = currentY;
+        for (let d = depth + 1; ; d++) {
+          const prevContour = prevChild!.contour.get(d);
+          const currContour = child!.contour.get(d);
+          if (!prevContour && !currContour) break;
+          if (prevContour && currContour) {
+            // child.y + currContour.min >= prevChild.y + prevContour.max + V_GAP
+            const contourY = prevChild!.node.y + prevContour.max - currContour.min + V_GAP;
+            if (contourY > minY) minY = contourY;
+          }
         }
+        currentY = minY;
       }
-      currentY = minY;
+      child!.node.y = currentY;
+      currentY += child!.totalHeight;
     }
-    child!.node.y = currentY;
-    currentY += child!.totalHeight;
-  }
 
-  // Center children vertically around this node
-  const totalChildrenHeight = currentY;
-  const center = totalChildrenHeight / 2;
-  const offset = center - NODE_HEIGHT / 2;
-  for (const child of measuredChildren) {
-    child.node.y -= offset;
-    child.node.x = STEP_X;
-  }
-
-  // If single child taller than parent, shift parent to align with child center
-  if (measuredChildren.length === 1 && totalChildrenHeight > NODE_HEIGHT) {
-    const child = measuredChildren[0]!;
-    const childCenter = child.totalHeight / 2;
-    ln.y = childCenter - NODE_HEIGHT / 2;
+    // Center children vertically around this node
+    totalChildrenHeight = currentY;
+    const center = totalChildrenHeight / 2;
+    const offset = center - NODE_HEIGHT / 2;
+    for (const child of measuredChildren) {
+      child.node.y -= offset;
+      child.node.x = STEP_X;
+    }
   }
 
   // Shift contour entries after centering
