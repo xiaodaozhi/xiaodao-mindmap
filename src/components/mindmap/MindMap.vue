@@ -108,7 +108,23 @@
       </button>
       <button
         class="canvas-tb-btn"
-        :disabled="!selectedNodeId"
+        :title="t('toolbar.resetView')"
+        @click="resetView"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
+      </button>
+      <button
+        v-if="selectedNodeId"
+        class="canvas-tb-btn"
         :title="t('toolbar.addChild')"
         @click="addChild"
       >
@@ -134,9 +150,10 @@
         /></svg>
       </button>
       <button
+        v-if="selectedNodeId"
         class="canvas-tb-btn"
-        :title="t('toolbar.resetView')"
-        @click="resetView"
+        :title="t('toolbar.edit')"
+        @click="editSelectedNode"
       >
         <svg
           width="16"
@@ -147,11 +164,11 @@
           stroke-width="2"
           stroke-linecap="round"
           stroke-linejoin="round"
-        ><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
+        ><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
       </button>
       <button
+        v-if="selectedNodeId && selectedNodeId !== innerRoot.id"
         class="canvas-tb-btn"
-        :disabled="!selectedNodeId || selectedNodeId === innerRoot.id"
         :title="t('toolbar.delete')"
         @click="deleteNode"
       >
@@ -238,6 +255,9 @@
               @keydown.enter="finishEdit"
               @keydown.escape="cancelEdit"
               @mousedown.stop
+              @touchstart.stop
+              @touchmove.stop
+              @touchend.stop
             >
           </foreignObject>
 
@@ -370,7 +390,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick, type Ref } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, type Ref } from 'vue';
 import type { MindMapNode, LayoutNode } from './types';
 import { useI18n } from './composables/useI18n';
 import { useUndoRedo } from './composables/useUndoRedo';
@@ -690,6 +710,14 @@ function startEdit(ln: LayoutNode) {
   });
 }
 
+function editSelectedNode() {
+  if (!selectedNodeId.value) return;
+  const node = layout.value.nodes.find((ln) => ln.id === selectedNodeId.value);
+  if (node) {
+    startEdit(node);
+  }
+}
+
 function startEditById(id: string) {
   const node = findNodeById(innerRoot.value, id);
   if (!node) return;
@@ -723,6 +751,19 @@ function finishEdit() {
 
 function cancelEdit() {
   editingNodeId.value = null;
+}
+
+function isEditInputTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && !!target.closest('.mm-edit-input');
+}
+
+function finishEditFromOutside(target: EventTarget | null) {
+  if (!editingNodeId.value || isEditInputTarget(target)) return;
+  finishEdit();
+}
+
+function onDocumentTouchStart(e: TouchEvent) {
+  finishEditFromOutside(e.target);
 }
 
 // --- Cut/Copy/Paste ---
@@ -1116,12 +1157,14 @@ function cancelNodeDrag() {
 
 function onNodeMouseDown(e: MouseEvent, ln: LayoutNode) {
   if (e.button !== 0) return;
+  finishEditFromOutside(e.target);
   startNodeDrag(ln, e.clientX, e.clientY);
   // Prevent canvas panning from starting
   e.stopPropagation();
 }
 
 function onCanvasMouseDown(e: MouseEvent) {
+  finishEditFromOutside(e.target);
   if (e.button === 0) {
     // Start panning
     isPanning.value = true;
@@ -1170,6 +1213,7 @@ function getTouchCenter(t1: Touch, t2: Touch): { x: number; y: number } {
 }
 
 function onNodeTouchStart(e: TouchEvent, ln: LayoutNode) {
+  finishEditFromOutside(e.target);
   if (e.touches.length !== 1) {
     onNodeTouchCancel();
     return;
@@ -1216,6 +1260,7 @@ function cleanupNodeTouch() {
 }
 
 function onCanvasTouchStart(e: TouchEvent) {
+  finishEditFromOutside(e.target);
   const list = Array.from(e.touches);
   if (list.length === 1) {
     // Single finger — start panning
@@ -1308,6 +1353,7 @@ function initView() {
 onMounted(() => {
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup', onMouseUp);
+  document.addEventListener('touchstart', onDocumentTouchStart, true);
 
   let initialized = false;
   const resizeObserver = new ResizeObserver(() => {
@@ -1331,6 +1377,12 @@ onMounted(() => {
       initView();
     }
   }, { deep: true });
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', onMouseMove);
+  window.removeEventListener('mouseup', onMouseUp);
+  document.removeEventListener('touchstart', onDocumentTouchStart, true);
 });
 </script>
 

@@ -2,6 +2,7 @@ export default {
   'toolbar.undo': '撤销',
   'toolbar.redo': '重做',
   'toolbar.addChild': '添加子节点',
+  'toolbar.edit': '编辑',
   'toolbar.delete': '删除节点',
   'toolbar.resetView': '重置视图',
   'toolbar.zoomIn': '放大',

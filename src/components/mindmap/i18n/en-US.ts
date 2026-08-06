@@ -2,6 +2,7 @@ export default {
   'toolbar.undo': 'Undo',
   'toolbar.redo': 'Redo',
   'toolbar.addChild': 'Add Child',
+  'toolbar.edit': 'Edit',
   'toolbar.delete': 'Delete Node',
   'toolbar.resetView': 'Reset View',
   'toolbar.zoomIn': 'Zoom In',
