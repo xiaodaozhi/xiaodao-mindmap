@@ -9,4 +9,20 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
     },
   },
+  build: {
+    lib: {
+      entry: resolve(__dirname, 'src/index.ts'),
+      name: 'XiaodaoMindmap',
+      fileName: 'xiaodao-mindmap',
+      formats: ['es', 'umd'],
+    },
+    rollupOptions: {
+      external: ['vue'],
+      output: {
+        globals: { vue: 'Vue' },
+      },
+    },
+    sourcemap: true,
+    cssCodeSplit: false,
+  },
 })
