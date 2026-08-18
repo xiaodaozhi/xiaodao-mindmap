@@ -1,6 +1,6 @@
 {
   "name": "xiaodao-mindmap",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A Vue 3 component for drawing mindmaps",
   "type": "module",
   "license": "MIT",
@@ -42,5 +42,13 @@
     "vite": "^5.4.0",
     "vue": "^3.4.0",
     "vue-tsc": "^2.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiaodaozhi/xiaodao-mindmap.git"
   }
 }
