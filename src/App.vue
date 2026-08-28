@@ -31,6 +31,8 @@ import { ref } from 'vue'
 import MindMap from './components/mindmap/MindMap.vue'
 import type { MindMapNode } from './components/mindmap/types'
 
+document.title = '小刀思维导图 | Xiaodao Mindmap'
+
 const currentTheme = ref<'light' | 'dark'>('light')
 const currentLocale = ref<string>('zh-CN')
 
