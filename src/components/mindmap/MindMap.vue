@@ -738,7 +738,7 @@ function finishEdit() {
   if (!editingNodeId.value) return;
   const node = findNodeById(innerRoot.value, editingNodeId.value);
   if (node) {
-    // Don't pushState for newly created nodes — the creation already did it.
+    // Don't pushState for newly created nodes - the creation already did it.
     // This way create+rename is a single undo step.
     if (!isNewNodeEdit.value) {
       pushState();
@@ -1000,7 +1000,7 @@ function updateNodeDrag(clientX: number, clientY: number): boolean {
   const dx = clientX - dragStartPos.value.x;
   const dy = clientY - dragStartPos.value.y;
   if (!isDragging.value && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
-    // Exceeded drag threshold — temporarily remove node from data
+    // Exceeded drag threshold - temporarily remove node from data
     isDragging.value = true;
     const node = findNodeById(innerRoot.value, dragNodeId.value);
     if (node) {
@@ -1127,7 +1127,7 @@ function finishNodeDrag(selectOnTap: boolean): boolean {
         emitUpdate();
       }
     } else {
-      // No valid drop target — restore node to original position and discard undo entry
+      // No valid drop target - restore node to original position and discard undo entry
       restoreDraggedNode();
       popUndo();
     }
@@ -1136,7 +1136,7 @@ function finishNodeDrag(selectOnTap: boolean): boolean {
   }
 
   if (!isDragging.value && dragNodeId.value) {
-    // Click/tap without drag — just select
+    // Click/tap without drag - just select
     if (selectOnTap) {
       selectedNodeId.value = dragNodeId.value;
     }
@@ -1263,12 +1263,12 @@ function onCanvasTouchStart(e: TouchEvent) {
   finishEditFromOutside(e.target);
   const list = Array.from(e.touches);
   if (list.length === 1) {
-    // Single finger — start panning
+    // Single finger - start panning
     isPanning.value = true;
     panStart.value = { x: list[0]!.clientX, y: list[0]!.clientY };
     panViewStart.value = { x: viewBox.value.x, y: viewBox.value.y };
   } else if (list.length === 2) {
-    // Two fingers — start pinch zoom
+    // Two fingers - start pinch zoom
     isPanning.value = false;
     touchStartDist.value = getTouchDist(list[0]!, list[1]!);
     touchStartZoomIndex.value = zoomIndex.value;
