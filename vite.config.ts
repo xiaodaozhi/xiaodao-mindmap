@@ -15,6 +15,7 @@ export default defineConfig({
       name: 'XiaodaoMindmap',
       fileName: 'xiaodao-mindmap',
       formats: ['es', 'umd'],
+      cssFileName: 'style',
     },
     rollupOptions: {
       external: ['vue'],
